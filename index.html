@@ -268,8 +268,11 @@ body {
   line-height: 1;
   cursor: pointer;
   touch-action: none;
-  transition: background 0.12s, border-color 0.12s;
+  opacity: 0;                 /* hidden until the wipe is touched */
+  pointer-events: none;
+  transition: opacity 0.15s, background 0.12s, border-color 0.12s;
 }
+#replay.handles-on .replay-handle { opacity: 1; pointer-events: auto; }
 .replay-handle::before {
   content: '';
   position: absolute;
@@ -807,8 +810,22 @@ const REPLAY_MIN_W = 90;
 const REPLAY_MAX_W = 420;
 const REPLAY_MARGIN = 13;         // keeps the corner handles on screen too
 const REPLAY_TAP_SLOP = 6;        // px of movement still counted as a tap
+const REPLAY_HANDLE_MS = 2500;    // handles fade out this long after the last touch
 let replayGeom = loadReplayGeom();
 let replayMoved = false;          // suppress the save sheet after a drag
+let replayHandleTimer = null;
+let replayRevealTap = false;      // the tap that summoned the handles isn't a save tap
+
+// The handles stay out of the way until the wipe is touched, so they don't sit
+// on the footage during a procedure.
+// sticky keeps them up with no timer, for as long as a drag lasts.
+function showReplayHandles({ sticky = false } = {}) {
+  replayBox.classList.add('handles-on');
+  clearTimeout(replayHandleTimer);
+  if (!sticky) {
+    replayHandleTimer = setTimeout(() => replayBox.classList.remove('handles-on'), REPLAY_HANDLE_MS);
+  }
+}
 
 function loadReplayGeom() {
   try {
@@ -847,7 +864,9 @@ function captureReplayGeom() {
 
 // Drag anywhere on the wipe to move it.
 replayBox.addEventListener('pointerdown', (e) => {
-  if (e.target.closest('#replay-close, #replay-resize')) return;
+  if (e.target.closest('#replay-close, #replay-resize')) { showReplayHandles(); return; }
+  replayRevealTap = !replayBox.classList.contains('handles-on');
+  showReplayHandles({ sticky: true });
   const g = captureReplayGeom();
   const startX = e.clientX, startY = e.clientY;
   const baseLeft = g.left, baseTop = g.top;
@@ -866,6 +885,7 @@ replayBox.addEventListener('pointerdown', (e) => {
     replayBox.removeEventListener('pointerup', onUp);
     replayBox.removeEventListener('pointercancel', onUp);
     replayBox.classList.remove('dragging');
+    showReplayHandles();          // restart the fade timer from the end of the drag
     if (replayMoved) saveReplayGeom();
   };
   replayBox.addEventListener('pointermove', onMove);
@@ -876,6 +896,7 @@ replayBox.addEventListener('pointerdown', (e) => {
 // Drag the bottom-left grip to resize; the top-right corner stays put.
 $('replay-resize').addEventListener('pointerdown', (e) => {
   e.stopPropagation();
+  showReplayHandles({ sticky: true });
   const g = captureReplayGeom();
   const right = g.left + g.width;
   const startX = e.clientX;
@@ -894,6 +915,7 @@ $('replay-resize').addEventListener('pointerdown', (e) => {
     handle.removeEventListener('pointerup', onUp);
     handle.removeEventListener('pointercancel', onUp);
     replayBox.classList.remove('dragging');
+    showReplayHandles();
     saveReplayGeom();
   };
   handle.addEventListener('pointermove', onMove);
@@ -912,11 +934,13 @@ function showReplay(blob) {
   replayVideo.classList.toggle('color', viewMode === 'color');
   replayBox.classList.add('active');
   applyReplayGeom();
+  showReplayHandles();          // flash the affordance when a new clip lands
   replayVideo.play().catch(() => {});
 }
 
 function dismissReplay() {
-  replayBox.classList.remove('active');
+  clearTimeout(replayHandleTimer);
+  replayBox.classList.remove('active', 'handles-on');
   replayVideo.pause();
   replayVideo.removeAttribute('src');
   replayVideo.load();
@@ -928,6 +952,7 @@ $('replay-close').addEventListener('click', (e) => { e.stopPropagation(); dismis
 // On the box, not the video: pointer capture during a drag retargets the click here.
 replayBox.addEventListener('click', (e) => {
   if (e.target.closest('#replay-close, #replay-resize')) return;
+  if (replayRevealTap) { replayRevealTap = false; return; }  // that tap only woke the handles
   if (!replayBlob || replayMoved) return;   // a drag must not open the save sheet
   pendingSaveBlob = replayBlob;
   pendingSaveName = 'clip';
