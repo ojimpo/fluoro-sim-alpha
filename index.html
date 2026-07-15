@@ -286,6 +286,32 @@ body {
   color: #4f8;
   border-color: rgba(79,255,136,0.25);
 }
+.ctrl-btn.rec-active {
+  color: #e33;
+  border-color: rgba(238,51,51,0.35);
+}
+
+/* --- Session recording badge (top center, independent of pedals) --- */
+#session-rec-badge {
+  display: none;
+  position: absolute;
+  top: 14px; left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 7px;
+  z-index: 21;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: #e55;
+  pointer-events: none;
+}
+#session-rec-badge.active { display: flex; }
+#session-rec-badge .dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: #e33;
+  animation: pulse 1s ease-in-out infinite;
+}
 
 /* --- Rotate hint (shown only in portrait) --- */
 #rotate-hint {
@@ -472,6 +498,8 @@ body {
     <div id="fluoro-status">○ STANDBY</div>
   </div>
 
+  <div id="session-rec-badge"><div class="dot"></div>REC SESSION</div>
+
   <!-- Replay wipe (loops the last acquisition) -->
   <div id="replay">
     <video id="replay-video" autoplay playsinline muted loop></video>
@@ -480,6 +508,7 @@ body {
   </div>
 
   <div id="bottom-bar">
+    <button class="ctrl-btn" id="btn-session-rec" onclick="toggleSessionRecording()">● Rec</button>
     <button class="ctrl-btn" id="btn-inv" onclick="toggleInvert()">Normal</button>
   </div>
 
@@ -497,7 +526,7 @@ body {
   </div>
 
   <div id="save-overlay">
-    <div class="label">この撮影を保存しますか？</div>
+    <div class="label" id="save-label">この撮影を保存しますか？</div>
     <div class="btn-row">
       <button class="save-btn" onclick="saveRecording()">保存</button>
       <button class="discard-btn" onclick="closeSaveOverlay()">閉じる</button>
@@ -525,6 +554,15 @@ let replayBlob = null;
 let replayUrl = null;
 const MAX_RECORD_MS = 10000;
 
+// session-wide recording (manual, independent of the pedals)
+let sessionRecorder = null;
+let sessionChunks = [];
+let isSessionRecording = false;
+
+// whichever blob the save overlay currently offers to save
+let pendingSaveBlob = null;
+let pendingSaveName = 'practice';
+
 let controlTimer = null;
 
 // key bindings for USB foot switch
@@ -543,8 +581,11 @@ const fluoroSt    = $('fluoro-status');
 const recInd      = $('rec-indicator');
 const recLabel    = $('rec-label');
 const btnInv      = $('btn-inv');
+const btnSessRec  = $('btn-session-rec');
+const sessBadge   = $('session-rec-badge');
 const bottomBar   = $('bottom-bar');
 const saveOvl     = $('save-overlay');
+const saveLabel   = $('save-label');
 const replayBox   = $('replay');
 const replayVideo = $('replay-video');
 
@@ -556,6 +597,13 @@ function showScreen(name) {
 }
 
 function resetToStart() {
+  if (isSessionRecording) {
+    try { if (sessionRecorder && sessionRecorder.state !== 'inactive') sessionRecorder.stop(); } catch (_) {}
+    isSessionRecording = false;
+    btnSessRec.textContent = '● Rec';
+    btnSessRec.classList.remove('rec-active');
+    sessBadge.classList.remove('active');
+  }
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   showScreen('start');
 }
@@ -730,7 +778,11 @@ function dismissReplay() {
 
 $('replay-close').addEventListener('click', (e) => { e.stopPropagation(); dismissReplay(); });
 replayVideo.addEventListener('click', () => {
-  if (replayBlob) saveOvl.classList.add('active');
+  if (!replayBlob) return;
+  pendingSaveBlob = replayBlob;
+  pendingSaveName = 'clip';
+  saveLabel.textContent = 'この撮影クリップを保存しますか？';
+  saveOvl.classList.add('active');
 });
 
 // --- Invert ---
@@ -744,11 +796,12 @@ function toggleInvert() {
 
 // --- Save / close ---
 async function saveRecording() {
-  if (!replayBlob) return;
-  const ext = replayBlob.type.includes('mp4') ? 'mp4' : 'webm';
+  const blob = pendingSaveBlob;
+  if (!blob) return;
+  const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
   const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
-  const name = `practice-${ts}.${ext}`;
-  const file = new File([replayBlob], name, { type: replayBlob.type });
+  const name = `${pendingSaveName}-${ts}.${ext}`;
+  const file = new File([blob], name, { type: blob.type });
 
   try {
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -759,7 +812,7 @@ async function saveRecording() {
   } catch (_) { /* share cancelled or failed */ }
 
   // Fallback: download link
-  const url = URL.createObjectURL(replayBlob);
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -772,6 +825,43 @@ async function saveRecording() {
 
 function closeSaveOverlay() {
   saveOvl.classList.remove('active');   // keep the replay looping
+  pendingSaveBlob = null;
+}
+
+// ============================================================
+//  Session recording (manual, whole session, not pedal-driven)
+// ============================================================
+function toggleSessionRecording() {
+  if (!stream) return;
+
+  if (!isSessionRecording) {
+    sessionChunks = [];
+    try {
+      sessionRecorder = new MediaRecorder(stream);
+    } catch (e) {
+      console.error('Session MediaRecorder failed:', e);
+      return;
+    }
+    sessionRecorder.ondataavailable = (e) => { if (e.data.size > 0) sessionChunks.push(e.data); };
+    sessionRecorder.onstop = () => {
+      const mime = sessionRecorder.mimeType || 'video/mp4';
+      pendingSaveBlob = new Blob(sessionChunks, { type: mime });
+      pendingSaveName = 'session';
+      saveLabel.textContent = 'セッション録画を保存しますか？';
+      saveOvl.classList.add('active');
+    };
+    sessionRecorder.start(1000);
+    isSessionRecording = true;
+    btnSessRec.textContent = '■ Stop';
+    btnSessRec.classList.add('rec-active');
+    sessBadge.classList.add('active');
+  } else {
+    if (sessionRecorder && sessionRecorder.state !== 'inactive') sessionRecorder.stop();
+    isSessionRecording = false;
+    btnSessRec.textContent = '● Rec';
+    btnSessRec.classList.remove('rec-active');
+    sessBadge.classList.remove('active');
+  }
 }
 
 // ============================================================

@@ -20,6 +20,9 @@ via DP Alt Mode.
      clip loops as a wipe in the top-right corner. Tap the wipe to save it (share sheet /
      download); tap **×** to clear it.
    - `I` — invert brightness (photo → X-ray-like look).
+4. **Rec** button (bottom bar) — records the whole session continuously, independent of the
+   pedals. Tap to start (a "REC SESSION" badge shows), tap again to stop and save. Runs in
+   parallel with the acquire pedal's clip recorder.
 
 ### USB / Bluetooth foot switch
 
@@ -35,7 +38,8 @@ one). Bindings are stored in `localStorage`.
 - `keydown` / `keyup` drive both pedals; the acquire key is configurable, everything else
   falls back to observe (foot-switch key mappings vary).
 - `MediaRecorder` captures the cine run; the clip is replayed with a looping `<video>`
-  wipe and saved via `navigator.share()` with a download fallback.
+  wipe and saved via `navigator.share()` with a download fallback. A second, independent
+  `MediaRecorder` handles the manual whole-session recording.
 - CSS `filter: grayscale/contrast/invert` for the fluoroscopy look.
 
 ## Deploy
