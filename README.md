@@ -19,7 +19,8 @@ via DP Alt Mode.
    - **撮影 / Acquire** — hold to record (max 10 s, auto-cut at the cap). On release the
      clip loops as a wipe in the top-right corner. Tap the wipe to save it (share sheet /
      download); tap **×** to clear it.
-   - `I` — invert brightness (photo → X-ray-like look).
+   - `I` (or the **Mono / Inverted / Color** button) — cycle the image look:
+     monochrome → monochrome inverted (X-ray-like) → full color.
 4. **Rec** button (bottom bar) — records the whole session continuously, independent of the
    pedals. Tap to start (a "REC SESSION" badge shows), tap again to stop and save. Runs in
    parallel with the acquire pedal's clip recorder.
