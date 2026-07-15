@@ -165,7 +165,7 @@ body {
 /* --- Bottom bar --- */
 #bottom-bar {
   position: absolute;
-  bottom: 0; left: 0; right: 0;
+  bottom: 96px; left: 0; right: 0;
   display: flex;
   justify-content: center;
   gap: 12px;
@@ -194,6 +194,68 @@ body {
 .ctrl-btn.inv-active {
   color: #4f8;
   border-color: rgba(79,255,136,0.25);
+}
+
+/* --- Rotate hint (shown only in portrait) --- */
+#rotate-hint {
+  display: none;
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 25;
+  padding: 11px 20px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  background: rgba(0,0,0,0.55);
+  color: #999;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  line-height: 1.7;
+  text-align: center;
+  pointer-events: none;
+}
+@media (orientation: portrait) {
+  #live-screen #rotate-hint { display: block; }
+}
+
+/* --- Virtual foot switch (on-screen pedal) --- */
+#pedal {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  min-height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  z-index: 20;
+  background: rgba(255,255,255,0.04);
+  border-top: 1px solid rgba(255,255,255,0.10);
+  color: #666;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  transition: background 0.05s, color 0.05s, border-color 0.05s;
+}
+#pedal::before {
+  content: "";
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  border: 1px solid #555;
+  transition: background 0.05s, border-color 0.05s, box-shadow 0.05s;
+}
+#pedal.pressed {
+  background: rgba(79,255,136,0.10);
+  border-top-color: rgba(79,255,136,0.40);
+  color: #4f8;
+}
+#pedal.pressed::before {
+  background: #4f8;
+  border-color: #4f8;
+  box-shadow: 0 0 10px rgba(79,255,136,0.7);
 }
 
 /* --- Save overlay --- */
@@ -253,8 +315,8 @@ body {
   <div class="app-title">Fluoroscopy Simulator</div>
   <button id="btn-start">Start</button>
   <div class="hint">
-    カメラが起動したら、フットスイッチ（任意のキー）を<br>
-    踏んでいる間だけ透視画像が表示されます
+    カメラが起動したら、画面下のフットスイッチ<br>
+    （または任意のキー）を押している間だけ透視画像が表示されます
   </div>
   <div class="hint" style="color:#333; margin-top:4px">
     R = 録画ON/OFF &nbsp; I = 明暗反転
@@ -273,6 +335,8 @@ body {
 
   <div id="standby-label"><span>standby</span></div>
 
+  <div id="rotate-hint">↻ 横向きにしてください<br>（外部モニター表示用）</div>
+
   <div id="top-bar">
     <div id="rec-indicator"><div id="rec-dot"></div>REC</div>
     <div id="fluoro-status">○ STANDBY</div>
@@ -282,6 +346,8 @@ body {
     <button class="ctrl-btn" id="btn-rec" onclick="toggleRecording()">● Rec</button>
     <button class="ctrl-btn" id="btn-inv" onclick="toggleInvert()">Normal</button>
   </div>
+
+  <div id="pedal"><span id="pedal-label">Hold to expose</span></div>
 
   <div id="save-overlay">
     <div class="label">録画完了</div>
@@ -480,6 +546,27 @@ document.addEventListener('pointermove', () => {
 document.addEventListener('pointerdown', () => {
   if (liveScreen.style.display !== 'none') resetControlTimer();
 });
+
+// --- Virtual foot switch (on-screen pedal) ---
+const pedal = $('pedal');
+const pedalLabel = $('pedal-label');
+
+function pedalDown(e) {
+  e.preventDefault();
+  try { pedal.setPointerCapture(e.pointerId); } catch (_) {}
+  pedal.classList.add('pressed');
+  pedalLabel.textContent = 'Exposing';
+  setExposure(true);
+}
+function pedalUp() {
+  pedal.classList.remove('pressed');
+  pedalLabel.textContent = 'Hold to expose';
+  setExposure(false);
+}
+
+pedal.addEventListener('pointerdown', pedalDown);
+pedal.addEventListener('pointerup', pedalUp);
+pedal.addEventListener('pointercancel', pedalUp);
 </script>
 </body>
 </html>
