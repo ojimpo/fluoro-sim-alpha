@@ -571,7 +571,7 @@ body {
   </div>
 
   <div id="save-overlay">
-    <div class="label" id="save-label">この撮影を保存しますか？</div>
+    <div class="label">セッション録画を保存しますか？</div>
     <div class="btn-row">
       <button class="save-btn" onclick="saveRecording()">保存</button>
       <button class="discard-btn" onclick="closeSaveOverlay()">閉じる</button>
@@ -596,7 +596,6 @@ let recording = false;
 let recordCut = false;          // 10s cutoff reached but pedal still held
 let recTimer = null;            // countdown interval
 let recStart = 0;
-let replayBlob = null;
 let replayUrl = null;
 const MAX_RECORD_MS = 10000;
 
@@ -605,9 +604,8 @@ let sessionRecorder = null;
 let sessionChunks = [];
 let isSessionRecording = false;
 
-// whichever blob the save overlay currently offers to save
+// the session recording the save overlay currently offers to save
 let pendingSaveBlob = null;
-let pendingSaveName = 'practice';
 
 let controlTimer = null;
 
@@ -631,7 +629,6 @@ const btnSessRec  = $('btn-session-rec');
 const sessBadge   = $('session-rec-badge');
 const bottomBar   = $('bottom-bar');
 const saveOvl     = $('save-overlay');
-const saveLabel   = $('save-label');
 const replayBox   = $('replay');
 const replayVideo = $('replay-video');
 
@@ -761,8 +758,7 @@ function beginAcquire() {
   mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
   mediaRecorder.onstop = () => {
     const mime = mediaRecorder.mimeType || 'video/mp4';
-    replayBlob = new Blob(chunks, { type: mime });
-    showReplay(replayBlob);
+    showReplay(new Blob(chunks, { type: mime }));
   };
   mediaRecorder.start();
 
@@ -812,9 +808,8 @@ const REPLAY_MARGIN = 13;         // keeps the corner handles on screen too
 const REPLAY_TAP_SLOP = 6;        // px of movement still counted as a tap
 const REPLAY_HANDLE_MS = 2500;    // handles fade out this long after the last touch
 let replayGeom = loadReplayGeom();
-let replayMoved = false;          // suppress the save sheet after a drag
+let replayMoved = false;          // only persist geometry when a drag really moved it
 let replayHandleTimer = null;
-let replayRevealTap = false;      // the tap that summoned the handles isn't a save tap
 
 // The handles stay out of the way until the wipe is touched, so they don't sit
 // on the footage during a procedure.
@@ -865,7 +860,6 @@ function captureReplayGeom() {
 // Drag anywhere on the wipe to move it.
 replayBox.addEventListener('pointerdown', (e) => {
   if (e.target.closest('#replay-close, #replay-resize')) { showReplayHandles(); return; }
-  replayRevealTap = !replayBox.classList.contains('handles-on');
   showReplayHandles({ sticky: true });
   const g = captureReplayGeom();
   const startX = e.clientX, startY = e.clientY;
@@ -945,20 +939,9 @@ function dismissReplay() {
   replayVideo.removeAttribute('src');
   replayVideo.load();
   if (replayUrl) { URL.revokeObjectURL(replayUrl); replayUrl = null; }
-  replayBlob = null;
 }
 
 $('replay-close').addEventListener('click', (e) => { e.stopPropagation(); dismissReplay(); });
-// On the box, not the video: pointer capture during a drag retargets the click here.
-replayBox.addEventListener('click', (e) => {
-  if (e.target.closest('#replay-close, #replay-resize')) return;
-  if (replayRevealTap) { replayRevealTap = false; return; }  // that tap only woke the handles
-  if (!replayBlob || replayMoved) return;   // a drag must not open the save sheet
-  pendingSaveBlob = replayBlob;
-  pendingSaveName = 'clip';
-  saveLabel.textContent = 'この撮影クリップを保存しますか？';
-  saveOvl.classList.add('active');
-});
 
 // --- View mode: mono -> inverted -> color ---
 function cycleView() {
@@ -985,7 +968,7 @@ async function saveRecording() {
   if (!blob) return;
   const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
   const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
-  const name = `${pendingSaveName}-${ts}.${ext}`;
+  const name = `session-${ts}.${ext}`;
   const file = new File([blob], name, { type: blob.type });
 
   try {
@@ -1031,8 +1014,6 @@ function toggleSessionRecording() {
     sessionRecorder.onstop = () => {
       const mime = sessionRecorder.mimeType || 'video/mp4';
       pendingSaveBlob = new Blob(sessionChunks, { type: mime });
-      pendingSaveName = 'session';
-      saveLabel.textContent = 'セッション録画を保存しますか？';
       saveOvl.classList.add('active');
     };
     sessionRecorder.start(1000);
