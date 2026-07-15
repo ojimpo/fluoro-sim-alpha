@@ -151,6 +151,7 @@ body {
 }
 #camera.exposing { opacity: 1; }
 #camera.inverted { filter: grayscale(1) invert(1) contrast(1.3) brightness(1.1); }
+#camera.color { filter: none; }
 
 #standby-label {
   position: absolute;
@@ -235,6 +236,7 @@ body {
   filter: grayscale(1) contrast(1.3) brightness(1.1);
 }
 #replay-video.inverted { filter: grayscale(1) invert(1) contrast(1.3) brightness(1.1); }
+#replay-video.color { filter: none; }
 #replay-tag {
   position: absolute;
   bottom: 5px; left: 7px;
@@ -289,6 +291,10 @@ body {
 .ctrl-btn.rec-active {
   color: #e33;
   border-color: rgba(238,51,51,0.35);
+}
+.ctrl-btn.color-active {
+  color: #7ac;
+  border-color: rgba(120,180,220,0.35);
 }
 
 /* --- Session recording badge (top center, independent of pedals) --- */
@@ -509,7 +515,7 @@ body {
 
   <div id="bottom-bar">
     <button class="ctrl-btn" id="btn-session-rec" onclick="toggleSessionRecording()">● Rec</button>
-    <button class="ctrl-btn" id="btn-inv" onclick="toggleInvert()">Normal</button>
+    <button class="ctrl-btn" id="btn-inv" onclick="cycleView()">Mono</button>
   </div>
 
   <div id="pedals">
@@ -537,7 +543,8 @@ body {
 <script>
 // --- State ---
 let stream = null;
-let inverted = false;
+let viewMode = 'mono';          // 'mono' | 'inverted' | 'color'
+const VIEW_MODES = ['mono', 'inverted', 'color'];
 
 // pedal state
 let observeHeld = false;
@@ -762,7 +769,8 @@ function showReplay(blob) {
   if (replayUrl) URL.revokeObjectURL(replayUrl);
   replayUrl = URL.createObjectURL(blob);
   replayVideo.src = replayUrl;
-  replayVideo.classList.toggle('inverted', inverted);
+  replayVideo.classList.toggle('inverted', viewMode === 'inverted');
+  replayVideo.classList.toggle('color', viewMode === 'color');
   replayBox.classList.add('active');
   replayVideo.play().catch(() => {});
 }
@@ -785,13 +793,23 @@ replayVideo.addEventListener('click', () => {
   saveOvl.classList.add('active');
 });
 
-// --- Invert ---
-function toggleInvert() {
-  inverted = !inverted;
-  camera.classList.toggle('inverted', inverted);
-  replayVideo.classList.toggle('inverted', inverted);
-  btnInv.textContent = inverted ? 'Inverted' : 'Normal';
-  btnInv.classList.toggle('inv-active', inverted);
+// --- View mode: mono -> inverted -> color ---
+function cycleView() {
+  const i = VIEW_MODES.indexOf(viewMode);
+  viewMode = VIEW_MODES[(i + 1) % VIEW_MODES.length];
+  applyViewMode();
+}
+
+function applyViewMode() {
+  for (const el of [camera, replayVideo]) {
+    el.classList.toggle('inverted', viewMode === 'inverted');
+    el.classList.toggle('color', viewMode === 'color');
+  }
+  btnInv.textContent =
+    viewMode === 'inverted' ? 'Inverted' :
+    viewMode === 'color'    ? 'Color'    : 'Mono';
+  btnInv.classList.toggle('inv-active', viewMode === 'inverted');
+  btnInv.classList.toggle('color-active', viewMode === 'color');
 }
 
 // --- Save / close ---
@@ -898,7 +916,7 @@ document.addEventListener('keyup', (e) => {
   if (liveScreen.style.display === 'none') return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'Escape') return;
-  if (e.key === 'i' || e.key === 'I') { toggleInvert(); return; }
+  if (e.key === 'i' || e.key === 'I') { cycleView(); return; }
 
   const kind = classifyKey(e.code || e.key);
   if (!kind) return;
