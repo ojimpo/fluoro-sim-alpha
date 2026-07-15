@@ -30,6 +30,7 @@ body {
   justify-content: center;
   height: 100%;
   gap: 24px;
+  padding: 24px;
 }
 
 .app-title {
@@ -60,9 +61,57 @@ body {
 .hint {
   font-size: 11px;
   color: #444;
-  max-width: 300px;
+  max-width: 320px;
   text-align: center;
   line-height: 1.7;
+}
+.hint b { color: #6a6; font-weight: normal; }
+.hint .rec-word { color: #c55; }
+
+/* --- Pedal key mapping (start screen) --- */
+#pedal-config {
+  width: 100%;
+  max-width: 320px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 4px;
+  font-size: 11px;
+  color: #555;
+}
+#pedal-config summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  list-style: none;
+}
+#pedal-config summary::-webkit-details-marker { display: none; }
+#pedal-config[open] summary { border-bottom: 1px solid rgba(255,255,255,0.06); }
+.cfg-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.cfg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.cfg-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #999;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 11px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cfg-btn.observe { border-color: rgba(79,255,136,0.3); color: #7c9; }
+.cfg-btn.record  { border-color: rgba(238,80,80,0.35); color: #d77; }
+.cfg-btn.listening { border-color: #fff; color: #fff; animation: pulse 0.8s ease-in-out infinite; }
+.cfg-key { color: #888; font-size: 11px; text-align: right; flex: 1; }
+.cfg-note { color: #3a3a3a; font-size: 10px; line-height: 1.6; }
+#cfg-reset {
+  background: none; border: none; color: #444;
+  font: inherit; font-size: 10px; cursor: pointer;
+  text-decoration: underline; align-self: flex-start;
 }
 
 /* --- Error screen --- */
@@ -161,11 +210,57 @@ body {
   transition: color 0.05s;
 }
 #fluoro-status.on { color: #4f8; }
+#fluoro-status.rec { color: #e55; }
 
-/* --- Bottom bar --- */
+/* --- Replay wipe (picture-in-picture) --- */
+#replay {
+  display: none;
+  position: absolute;
+  top: 52px;
+  right: 12px;
+  width: min(38vw, 260px);
+  aspect-ratio: 16 / 9;
+  z-index: 22;
+  border: 1px solid rgba(238,80,80,0.5);
+  border-radius: 5px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.6);
+}
+#replay.active { display: block; }
+#replay-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(1) contrast(1.3) brightness(1.1);
+}
+#replay-video.inverted { filter: grayscale(1) invert(1) contrast(1.3) brightness(1.1); }
+#replay-tag {
+  position: absolute;
+  bottom: 5px; left: 7px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: #f88;
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+}
+#replay-close {
+  position: absolute;
+  top: 3px; right: 4px;
+  width: 22px; height: 22px;
+  border: none;
+  background: rgba(0,0,0,0.45);
+  color: #ddd;
+  font-size: 15px;
+  line-height: 1;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+/* --- Bottom controls --- */
 #bottom-bar {
   position: absolute;
-  bottom: 96px; left: 0; right: 0;
+  bottom: 104px; left: 0; right: 0;
   display: flex;
   justify-content: center;
   gap: 12px;
@@ -187,10 +282,6 @@ body {
   transition: color 0.15s, border-color 0.15s;
 }
 .ctrl-btn:active { background: rgba(255,255,255,0.13); }
-.ctrl-btn.rec-active {
-  color: #e33;
-  border-color: rgba(238,51,51,0.35);
-}
 .ctrl-btn.inv-active {
   color: #4f8;
   border-color: rgba(79,255,136,0.25);
@@ -218,21 +309,26 @@ body {
   #live-screen #rotate-hint { display: block; }
 }
 
-/* --- Virtual foot switch (on-screen pedal) --- */
-#pedal {
+/* --- Virtual foot switch (two on-screen pedals) --- */
+#pedals {
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  min-height: 88px;
   display: flex;
+  z-index: 20;
+  min-height: 96px;
+}
+.pedal {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  z-index: 20;
+  gap: 8px;
   background: rgba(255,255,255,0.04);
   border-top: 1px solid rgba(255,255,255,0.10);
   color: #666;
   font-size: 12px;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   cursor: pointer;
   user-select: none;
@@ -240,22 +336,35 @@ body {
   touch-action: none;
   transition: background 0.05s, color 0.05s, border-color 0.05s;
 }
-#pedal::before {
-  content: "";
+.pedal + .pedal { border-left: 1px solid rgba(255,255,255,0.10); }
+.pedal .dot {
   width: 12px; height: 12px;
   border-radius: 50%;
   border: 1px solid #555;
   transition: background 0.05s, border-color 0.05s, box-shadow 0.05s;
 }
-#pedal.pressed {
+.pedal .sub { font-size: 9px; letter-spacing: 0.1em; color: #444; }
+
+/* Observe pedal (green) */
+#pedal-observe.pressed {
   background: rgba(79,255,136,0.10);
   border-top-color: rgba(79,255,136,0.40);
   color: #4f8;
 }
-#pedal.pressed::before {
-  background: #4f8;
-  border-color: #4f8;
+#pedal-observe.pressed .dot {
+  background: #4f8; border-color: #4f8;
   box-shadow: 0 0 10px rgba(79,255,136,0.7);
+}
+
+/* Record pedal (red) */
+#pedal-record.pressed {
+  background: rgba(238,80,80,0.12);
+  border-top-color: rgba(238,80,80,0.45);
+  color: #f77;
+}
+#pedal-record.pressed .dot {
+  background: #e55; border-color: #e55;
+  box-shadow: 0 0 10px rgba(238,80,80,0.75);
 }
 
 /* --- Save overlay --- */
@@ -315,12 +424,33 @@ body {
   <div class="app-title">Fluoroscopy Simulator</div>
   <button id="btn-start">Start</button>
   <div class="hint">
-    カメラが起動したら、画面下のフットスイッチ<br>
-    （または任意のキー）を押している間だけ透視画像が表示されます
+    2つのフットペダル（または画面下のペダル）で操作します<br>
+    <b>観察</b>：踏んでいる間だけ透視画像が見えます<br>
+    <span class="rec-word">撮影</span>：踏んでいる間（最大10秒）録画され、離すと画面右上に繰り返し再生されます
   </div>
-  <div class="hint" style="color:#333; margin-top:4px">
-    R = 録画ON/OFF &nbsp; I = 明暗反転
+  <div class="hint" style="color:#333; margin-top:-8px">
+    I = 明暗反転
   </div>
+
+  <details id="pedal-config">
+    <summary>USBペダルのキー割り当て（任意）</summary>
+    <div class="cfg-body">
+      <div class="cfg-row">
+        <button class="cfg-btn observe" data-bind="observe">観察ペダル登録</button>
+        <span class="cfg-key" id="key-observe">未設定（他の全キー）</span>
+      </div>
+      <div class="cfg-row">
+        <button class="cfg-btn record" data-bind="record">撮影ペダル登録</button>
+        <span class="cfg-key" id="key-record">未設定</span>
+      </div>
+      <div class="cfg-note">
+        ボタンを押してから対応するペダルを踏むと、そのキーが登録されます。
+        2ペダルのスイッチは各ペダルで異なるキーを送るので、両方を登録すると個別に反応します。
+        撮影ペダルだけ登録すれば、他の全キーは観察として動きます。
+      </div>
+      <button id="cfg-reset">割り当てをリセット</button>
+    </div>
+  </details>
 </div>
 
 <!-- Error Screen -->
@@ -338,22 +468,39 @@ body {
   <div id="rotate-hint">↻ 横向きにしてください<br>（外部モニター表示用）</div>
 
   <div id="top-bar">
-    <div id="rec-indicator"><div id="rec-dot"></div>REC</div>
+    <div id="rec-indicator"><div id="rec-dot"></div><span id="rec-label">REC</span></div>
     <div id="fluoro-status">○ STANDBY</div>
   </div>
 
+  <!-- Replay wipe (loops the last acquisition) -->
+  <div id="replay">
+    <video id="replay-video" autoplay playsinline muted loop></video>
+    <div id="replay-tag">⟳ REPLAY</div>
+    <button id="replay-close" title="消す">×</button>
+  </div>
+
   <div id="bottom-bar">
-    <button class="ctrl-btn" id="btn-rec" onclick="toggleRecording()">● Rec</button>
     <button class="ctrl-btn" id="btn-inv" onclick="toggleInvert()">Normal</button>
   </div>
 
-  <div id="pedal"><span id="pedal-label">Hold to expose</span></div>
+  <div id="pedals">
+    <div id="pedal-observe" class="pedal">
+      <div class="dot"></div>
+      <span>観察 / Observe</span>
+      <span class="sub">Hold to view</span>
+    </div>
+    <div id="pedal-record" class="pedal">
+      <div class="dot"></div>
+      <span>撮影 / Acquire</span>
+      <span class="sub" id="record-sub">Hold to record</span>
+    </div>
+  </div>
 
   <div id="save-overlay">
-    <div class="label">録画完了</div>
+    <div class="label">この撮影を保存しますか？</div>
     <div class="btn-row">
       <button class="save-btn" onclick="saveRecording()">保存</button>
-      <button class="discard-btn" onclick="discardRecording()">破棄</button>
+      <button class="discard-btn" onclick="closeSaveOverlay()">閉じる</button>
     </div>
   </div>
 </div>
@@ -361,13 +508,29 @@ body {
 <script>
 // --- State ---
 let stream = null;
-let isExposing = false;
-let isRecording = false;
 let inverted = false;
+
+// pedal state
+let observeHeld = false;
+let recordHeld = false;
+
+// recording / replay
 let mediaRecorder = null;
 let chunks = [];
-let recordedBlob = null;
+let recording = false;
+let recordCut = false;          // 10s cutoff reached but pedal still held
+let recTimer = null;            // countdown interval
+let recStart = 0;
+let replayBlob = null;
+let replayUrl = null;
+const MAX_RECORD_MS = 10000;
+
 let controlTimer = null;
+
+// key bindings for USB foot switch
+let observeKey = localStorage.getItem('fluoro.observeKey') || null;
+let recordKey  = localStorage.getItem('fluoro.recordKey')  || null;
+let bindingTarget = null;       // 'observe' | 'record' while listening on start screen
 
 // --- DOM ---
 const $ = (id) => document.getElementById(id);
@@ -378,11 +541,12 @@ const camera      = $('camera');
 const standby     = $('standby-label');
 const fluoroSt    = $('fluoro-status');
 const recInd      = $('rec-indicator');
-const btnRec      = $('btn-rec');
+const recLabel    = $('rec-label');
 const btnInv      = $('btn-inv');
-const topBar      = $('top-bar');
 const bottomBar   = $('bottom-bar');
 const saveOvl     = $('save-overlay');
+const replayBox   = $('replay');
+const replayVideo = $('replay-video');
 
 // --- Screen transitions ---
 function showScreen(name) {
@@ -425,99 +589,177 @@ $('btn-start').addEventListener('click', async () => {
   }
 });
 
-// --- Exposure (foot switch) ---
+// --- Exposure (camera visibility) ---
 function setExposure(on) {
-  isExposing = on;
   camera.classList.toggle('exposing', on);
   standby.classList.toggle('hidden', on);
-  fluoroSt.textContent = on ? '● FLUORO' : '○ STANDBY';
-  fluoroSt.classList.toggle('on', on);
 }
 
-// --- Key events ---
-document.addEventListener('keydown', (e) => {
-  if (liveScreen.style.display === 'none') return;
-  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.key === 'Escape') return;
-  if (e.key === 'r' || e.key === 'R') return;
-  if (e.key === 'i' || e.key === 'I') return;
-  e.preventDefault();
+// --- Status helpers ---
+function statusObserve() {
+  fluoroSt.textContent = '● FLUORO';
+  fluoroSt.className = 'on';
+}
+function statusRecord(remaining) {
+  fluoroSt.textContent = '● ACQUIRE';
+  fluoroSt.className = 'rec';
+  recLabel.textContent = 'REC ' + remaining.toFixed(1) + 's';
+}
+function statusStandby() {
+  fluoroSt.textContent = '○ STANDBY';
+  fluoroSt.className = '';
+}
+
+// ============================================================
+//  Observe pedal  ── live view while held
+// ============================================================
+function pressObserve() {
+  if (observeHeld) return;
+  observeHeld = true;
+  $('pedal-observe').classList.add('pressed');
+  if (recording) return;              // record pedal has priority
   setExposure(true);
-});
-
-document.addEventListener('keyup', (e) => {
-  if (liveScreen.style.display === 'none') return;
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.key === 'Escape') return;
-
-  if (e.key === 'r' || e.key === 'R') { toggleRecording(); return; }
-  if (e.key === 'i' || e.key === 'I') { toggleInvert(); return; }
-
+  statusObserve();
+}
+function releaseObserve() {
+  if (!observeHeld) return;
+  observeHeld = false;
+  $('pedal-observe').classList.remove('pressed');
+  if (recording) return;              // record still controls the screen
   setExposure(false);
+  statusStandby();
+}
+
+// ============================================================
+//  Record pedal  ── live + record (<=10s), replay on release
+// ============================================================
+function pressRecord() {
+  if (recordHeld) return;
+  recordHeld = true;
+  $('pedal-record').classList.add('pressed');
+  if (recording || recordCut) return; // already recording, or waiting for release after cutoff
+  beginAcquire();
+}
+function releaseRecord() {
+  if (!recordHeld) return;
+  recordHeld = false;
+  recordCut = false;
+  $('pedal-record').classList.remove('pressed');
+  $('record-sub').textContent = 'Hold to record';
+  if (recording) {
+    endAcquire();                     // manual stop before 10s -> triggers replay
+  } else if (observeHeld) {
+    setExposure(true); statusObserve();
+  } else {
+    setExposure(false); statusStandby();
+  }
+}
+
+function beginAcquire() {
+  if (!stream) return;
+  chunks = [];
+  try {
+    mediaRecorder = new MediaRecorder(stream);
+  } catch (e) {
+    console.error('MediaRecorder failed:', e);
+    return;
+  }
+  mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    const mime = mediaRecorder.mimeType || 'video/mp4';
+    replayBlob = new Blob(chunks, { type: mime });
+    showReplay(replayBlob);
+  };
+  mediaRecorder.start();
+
+  recording = true;
+  recStart = Date.now();
+  setExposure(true);
+
+  recInd.classList.add('active');
+  statusRecord(MAX_RECORD_MS / 1000);
+
+  clearInterval(recTimer);
+  recTimer = setInterval(() => {
+    const elapsed = Date.now() - recStart;
+    const remaining = Math.max(0, (MAX_RECORD_MS - elapsed) / 1000);
+    statusRecord(remaining);
+    $('record-sub').textContent = remaining.toFixed(1) + 's';
+    if (elapsed >= MAX_RECORD_MS) {
+      recordCut = true;               // hit the 10s cap; screen stops even if still held
+      endAcquire();
+    }
+  }, 100);
+}
+
+function endAcquire() {
+  if (!recording) return;
+  recording = false;
+  clearInterval(recTimer);
+  try {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  } catch (_) {}
+  recInd.classList.remove('active');
+
+  // After acquisition the live screen returns to whatever the observe pedal wants.
+  if (observeHeld && !recordCut) {
+    setExposure(true); statusObserve();
+  } else {
+    setExposure(false); statusStandby();
+  }
+}
+
+// --- Replay wipe (loops the last acquisition in the top-right corner) ---
+function showReplay(blob) {
+  if (replayUrl) URL.revokeObjectURL(replayUrl);
+  replayUrl = URL.createObjectURL(blob);
+  replayVideo.src = replayUrl;
+  replayVideo.classList.toggle('inverted', inverted);
+  replayBox.classList.add('active');
+  replayVideo.play().catch(() => {});
+}
+
+function dismissReplay() {
+  replayBox.classList.remove('active');
+  replayVideo.pause();
+  replayVideo.removeAttribute('src');
+  replayVideo.load();
+  if (replayUrl) { URL.revokeObjectURL(replayUrl); replayUrl = null; }
+  replayBlob = null;
+}
+
+$('replay-close').addEventListener('click', (e) => { e.stopPropagation(); dismissReplay(); });
+replayVideo.addEventListener('click', () => {
+  if (replayBlob) saveOvl.classList.add('active');
 });
 
 // --- Invert ---
 function toggleInvert() {
   inverted = !inverted;
   camera.classList.toggle('inverted', inverted);
+  replayVideo.classList.toggle('inverted', inverted);
   btnInv.textContent = inverted ? 'Inverted' : 'Normal';
   btnInv.classList.toggle('inv-active', inverted);
 }
 
-// --- Recording ---
-function toggleRecording() {
-  if (!stream) return;
-
-  if (!isRecording) {
-    chunks = [];
-    try {
-      mediaRecorder = new MediaRecorder(stream);
-    } catch (e) {
-      console.error('MediaRecorder failed:', e);
-      return;
-    }
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
-    };
-    mediaRecorder.onstop = () => {
-      const mime = mediaRecorder.mimeType || 'video/mp4';
-      recordedBlob = new Blob(chunks, { type: mime });
-      saveOvl.classList.add('active');
-    };
-    mediaRecorder.start(1000);
-    isRecording = true;
-    recInd.classList.add('active');
-    btnRec.textContent = '■ Stop';
-    btnRec.classList.add('rec-active');
-  } else {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop();
-    }
-    isRecording = false;
-    recInd.classList.remove('active');
-    btnRec.textContent = '● Rec';
-    btnRec.classList.remove('rec-active');
-  }
-}
-
+// --- Save / close ---
 async function saveRecording() {
-  if (!recordedBlob) return;
-  const ext = recordedBlob.type.includes('mp4') ? 'mp4' : 'webm';
+  if (!replayBlob) return;
+  const ext = replayBlob.type.includes('mp4') ? 'mp4' : 'webm';
   const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
   const name = `practice-${ts}.${ext}`;
-  const file = new File([recordedBlob], name, { type: recordedBlob.type });
+  const file = new File([replayBlob], name, { type: replayBlob.type });
 
-  // Try Web Share API first (works well on iOS Safari)
   try {
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file], title: 'Practice Recording' });
-      discardRecording();
+      closeSaveOverlay();
       return;
     }
   } catch (_) { /* share cancelled or failed */ }
 
   // Fallback: download link
-  const url = URL.createObjectURL(recordedBlob);
+  const url = URL.createObjectURL(replayBlob);
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -525,13 +767,54 @@ async function saveRecording() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  discardRecording();
+  closeSaveOverlay();
 }
 
-function discardRecording() {
-  recordedBlob = null;
-  saveOvl.classList.remove('active');
+function closeSaveOverlay() {
+  saveOvl.classList.remove('active');   // keep the replay looping
 }
+
+// ============================================================
+//  Keyboard (USB / Bluetooth foot switch)
+// ============================================================
+function classifyKey(code) {
+  if (recordKey && code === recordKey) return 'record';
+  if (observeKey) return code === observeKey ? 'observe' : null;
+  return 'observe';                     // no observe binding -> any other key = observe
+}
+
+document.addEventListener('keydown', (e) => {
+  // Binding mode (start screen): capture the next key for a pedal.
+  if (bindingTarget) {
+    e.preventDefault();
+    bindKey(bindingTarget, e.code || e.key);
+    bindingTarget = null;
+    return;
+  }
+
+  if (liveScreen.style.display === 'none') return;
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'Escape') return;
+  if (e.key === 'i' || e.key === 'I') return;   // invert handled on keyup
+
+  const kind = classifyKey(e.code || e.key);
+  if (!kind) return;
+  e.preventDefault();
+  if (kind === 'record') pressRecord();
+  else pressObserve();
+});
+
+document.addEventListener('keyup', (e) => {
+  if (liveScreen.style.display === 'none') return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'Escape') return;
+  if (e.key === 'i' || e.key === 'I') { toggleInvert(); return; }
+
+  const kind = classifyKey(e.code || e.key);
+  if (!kind) return;
+  if (kind === 'record') releaseRecord();
+  else releaseObserve();
+});
 
 // --- Auto-hide controls ---
 function resetControlTimer() {
@@ -539,7 +822,6 @@ function resetControlTimer() {
   clearTimeout(controlTimer);
   controlTimer = setTimeout(() => { bottomBar.style.opacity = '0'; }, 4000);
 }
-
 document.addEventListener('pointermove', () => {
   if (liveScreen.style.display !== 'none') resetControlTimer();
 });
@@ -547,26 +829,63 @@ document.addEventListener('pointerdown', () => {
   if (liveScreen.style.display !== 'none') resetControlTimer();
 });
 
-// --- Virtual foot switch (on-screen pedal) ---
-const pedal = $('pedal');
-const pedalLabel = $('pedal-label');
-
-function pedalDown(e) {
-  e.preventDefault();
-  try { pedal.setPointerCapture(e.pointerId); } catch (_) {}
-  pedal.classList.add('pressed');
-  pedalLabel.textContent = 'Exposing';
-  setExposure(true);
+// --- On-screen pedals (pointer) ---
+function bindPedal(el, press, release) {
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    press();
+  });
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
 }
-function pedalUp() {
-  pedal.classList.remove('pressed');
-  pedalLabel.textContent = 'Hold to expose';
-  setExposure(false);
+bindPedal($('pedal-observe'), pressObserve, releaseObserve);
+bindPedal($('pedal-record'),  pressRecord,  releaseRecord);
+
+// ============================================================
+//  Key-binding config (start screen)
+// ============================================================
+function keyLabel(code) { return code ? code : null; }
+
+function refreshKeyLabels() {
+  $('key-observe').textContent = observeKey ? keyLabel(observeKey) : '未設定（他の全キー）';
+  $('key-record').textContent  = recordKey ? keyLabel(recordKey)  : '未設定';
 }
 
-pedal.addEventListener('pointerdown', pedalDown);
-pedal.addEventListener('pointerup', pedalUp);
-pedal.addEventListener('pointercancel', pedalUp);
+function bindKey(target, code) {
+  if (target === 'observe') {
+    observeKey = code;
+    localStorage.setItem('fluoro.observeKey', code);
+  } else {
+    recordKey = code;
+    localStorage.setItem('fluoro.recordKey', code);
+  }
+  document.querySelectorAll('.cfg-btn').forEach(b => b.classList.remove('listening'));
+  refreshKeyLabels();
+}
+
+document.querySelectorAll('.cfg-btn[data-bind]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.cfg-btn').forEach(b => b.classList.remove('listening'));
+    bindingTarget = btn.dataset.bind;
+    btn.classList.add('listening');
+    btn.textContent = 'ペダルを踏んでください…';
+    setTimeout(() => {
+      btn.textContent = btn.dataset.bind === 'observe' ? '観察ペダル登録' : '撮影ペダル登録';
+    }, 3000);
+  });
+});
+
+$('cfg-reset').addEventListener('click', () => {
+  observeKey = recordKey = null;
+  localStorage.removeItem('fluoro.observeKey');
+  localStorage.removeItem('fluoro.recordKey');
+  bindingTarget = null;
+  document.querySelectorAll('.cfg-btn').forEach(b => b.classList.remove('listening'));
+  refreshKeyLabels();
+});
+
+refreshKeyLabels();
 </script>
 </body>
 </html>
