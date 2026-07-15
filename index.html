@@ -218,23 +218,26 @@ body {
   display: none;
   position: absolute;
   top: 44px;
-  right: 6px;
+  right: 14px;                /* leaves room for the handle overhanging the corner */
   width: min(24vw, 170px);
   aspect-ratio: 16 / 9;
   z-index: 22;
   border: 1px solid rgba(238,80,80,0.5);
   border-radius: 5px;
-  overflow: hidden;
   background: #000;
   box-shadow: 0 4px 18px rgba(0,0,0,0.6);
   touch-action: none;
+  /* No overflow:hidden — the corner handles deliberately spill outside.
+     The video clips itself instead. */
 }
 #replay.dragging { box-shadow: 0 0 0 1px rgba(238,80,80,0.9), 0 6px 22px rgba(0,0,0,0.7); }
 #replay.active { display: block; }
 #replay-video {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: 4px;        /* inside the 5px border of the box */
   filter: grayscale(1) contrast(1.3) brightness(1.1);
 }
 #replay-video.inverted { filter: grayscale(1) invert(1) contrast(1.3) brightness(1.1); }
@@ -257,9 +260,9 @@ body {
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1px solid rgba(255,255,255,0.28);
+  border: 1px solid rgba(255,255,255,0.38);
   border-radius: 50%;
-  background: rgba(0,0,0,0.5);
+  background: rgba(18,18,18,0.82);   /* opaque enough to read on the black screen too */
   color: #ddd;
   font: inherit;
   line-height: 1;
@@ -274,12 +277,14 @@ body {
 }
 .replay-handle:active { background: rgba(238,80,80,0.55); border-color: rgba(255,255,255,0.5); }
 
+/* Centred on the corner vertex (half the 22px circle), so only a quarter of
+   each handle covers the footage. */
 #replay-close {
-  top: 3px; right: 3px;
+  top: -11px; right: -11px;
   font-size: 13px;
 }
 #replay-resize {
-  left: 3px; bottom: 3px;
+  left: -11px; bottom: -11px;
   cursor: nesw-resize;
 }
 #replay-resize svg { width: 11px; height: 11px; stroke: #ddd; fill: none; }
@@ -800,7 +805,7 @@ function endAcquire() {
 // and restored across sessions. Until then the CSS default (top-right) applies.
 const REPLAY_MIN_W = 90;
 const REPLAY_MAX_W = 420;
-const REPLAY_MARGIN = 4;
+const REPLAY_MARGIN = 13;         // keeps the corner handles on screen too
 const REPLAY_TAP_SLOP = 6;        // px of movement still counted as a tap
 let replayGeom = loadReplayGeom();
 let replayMoved = false;          // suppress the save sheet after a drag
