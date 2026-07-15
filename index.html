@@ -1107,6 +1107,11 @@ document.addEventListener('touchmove', (e) => {
 
 // --- On-screen pedals (pointer) ---
 function bindPedal(el, press, release) {
+  // A pedal is held down, which iOS reads as a long press on the label and
+  // answers with the selection loupe. Only touchstart cancels that gesture --
+  // preventDefault on pointerdown does not, and neither does user-select.
+  // The pedals run on pointer events, so losing the synthetic click is free.
+  el.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
   el.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     try { el.setPointerCapture(e.pointerId); } catch (_) {}
