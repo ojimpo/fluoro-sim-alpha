@@ -124,6 +124,45 @@ body {
   text-decoration: underline; align-self: flex-start;
 }
 
+/* --- Key diagnostic --- */
+.cfg-diag {
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cfg-diag-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #555;
+}
+#diag-clear {
+  background: none; border: none; color: #444;
+  font: inherit; font-size: 10px; cursor: pointer;
+  text-decoration: underline;
+}
+.key-log {
+  height: 108px;
+  overflow-y: auto;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #9a9a9a;
+}
+.key-log-empty { color: #3a3a3a; font-size: 10px; line-height: 1.6; }
+.key-log .down { color: #7c9; }
+.key-log .up   { color: #d88; }
+.key-log .rep  { color: #555; }
+.key-log .gap  { color: #555; }
+
 /* --- Error screen --- */
 #error-screen {
   display: none;
@@ -524,6 +563,14 @@ body {
         撮影ペダルだけ登録すれば、他の全キーは観察として動きます。
       </div>
       <button id="cfg-reset">割り当てをリセット</button>
+
+      <div class="cfg-diag">
+        <div class="cfg-diag-head">
+          キー診断
+          <button id="diag-clear" type="button">消去</button>
+        </div>
+        <div id="key-log" class="key-log"><span class="key-log-empty">ここでペダルを踏むと、送られてくるキーイベントが出ます。<br>踏んだ時に ↓、離した時に ↑ が出れば「ホールド」。<br>踏んだだけで ↓↑ が続けて出て離しても無反応なら「タップ」です。</span></div>
+      </div>
     </div>
   </details>
 </div>
@@ -1164,6 +1211,39 @@ $('cfg-reset').addEventListener('click', () => {
   bindingTarget = null;
   document.querySelectorAll('.cfg-btn').forEach(b => b.classList.remove('listening'));
   refreshKeyLabels();
+});
+
+// ============================================================
+//  Key diagnostic ── show raw key events so a foot switch's
+//  behaviour (hold vs tap) can be read off on the device itself.
+// ============================================================
+const keyLog = $('key-log');
+let diagLastAt = null;
+function logKeyEvent(kind, e) {
+  const now = performance.now();
+  const gap = diagLastAt === null ? null : Math.round(now - diagLastAt);
+  diagLastAt = now;
+
+  const empty = keyLog.querySelector('.key-log-empty');
+  if (empty) keyLog.textContent = '';
+
+  const code = e.code || e.key || '?';
+  const line = document.createElement('div');
+  const arrow = kind === 'down'
+    ? `<span class="down">↓ ${code}${e.repeat ? ' <span class="rep">(repeat)</span>' : ''}</span>`
+    : `<span class="up">↑ ${code}</span>`;
+  const gapTxt = gap === null ? '' : ` <span class="gap">+${gap}ms</span>`;
+  line.innerHTML = arrow + gapTxt;
+  keyLog.appendChild(line);
+
+  while (keyLog.childElementCount > 40) keyLog.removeChild(keyLog.firstChild);
+  keyLog.scrollTop = keyLog.scrollHeight;
+}
+document.addEventListener('keydown', (e) => logKeyEvent('down', e));
+document.addEventListener('keyup',   (e) => logKeyEvent('up', e));
+$('diag-clear').addEventListener('click', () => {
+  keyLog.innerHTML = '<span class="key-log-empty">クリアしました。もう一度ペダルを踏んでください。</span>';
+  diagLastAt = null;
 });
 
 refreshKeyLabels();
