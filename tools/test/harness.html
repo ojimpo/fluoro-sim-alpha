@@ -1,0 +1,57 @@
+<!doctype html><meta charset="utf-8"><title>fluoro-sim marker tests</title>
+<style>body{font:12px monospace} iframe{width:1280px;height:720px;border:0}</style>
+<pre id="out">pending</pre>
+<iframe id="app"></iframe>
+<script>
+/* Everything is exercised through the real index.html in an iframe, so the
+   code under test is literally the shipped file. */
+const CASES = ['flat','tilted','rotated','noisy','vignette','small','uhd',
+               'clutter','whitebg','occluded'];
+const EXPECT = { clutter: 0, occluded: 3 };
+const results = [];
+const load = (src) => new Promise((res, rej) => {
+  const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error(src)); im.src = src;
+});
+
+function imageDataOf(im) {
+  const cv = document.createElement('canvas');
+  cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(im, 0, 0);
+  return ctx.getImageData(0, 0, cv.width, cv.height);
+}
+
+
+
+
+const frame = document.getElementById('app');
+const loadApp = () => new Promise(res => {
+  frame.addEventListener('load', () => res(frame.contentWindow), { once: true });
+  frame.src = '../../index.html?t=' + (frame.src ? 1 : 0);
+});
+
+(async () => {
+  const w = await loadApp();
+  const truth = await (await fetch('fixtures/truth.json')).json();
+  for (const name of CASES) {
+    try {
+      const found = w.detectMarkers(imageDataOf(await load(`fixtures/${name}.png`)));
+      const t = truth[name];
+      let err = 0;
+      for (const f of found) {
+        const g = t[String(f.id)];
+        if (!g) { err = Infinity; continue; }
+        const cx = f.corners.reduce((s, p) => s + p[0], 0) / 4;
+        const cy = f.corners.reduce((s, p) => s + p[1], 0) / 4;
+        err = Math.max(err, Math.hypot(cx - g[0], cy - g[1]));
+      }
+      const want = EXPECT[name] ?? 4;
+      results.push({ test: `detect:${name}`, ok: found.length === want && (want === 0 || err < 2),
+                     n: found.length, want, err: +err.toFixed(2) });
+    } catch (e) {
+      results.push({ test: `detect:${name}`, ok: false, why: String(e && e.message || e) });
+    }
+  }
+  document.getElementById('out').textContent = 'RESULT ' + JSON.stringify(results);
+})();
+</script>
