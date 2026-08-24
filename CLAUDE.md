@@ -56,6 +56,8 @@ Claude Code 向けのプロジェクト指示・引き継ぎメモ。
 - **表示モード**を `mono → inverted → color` で循環（`I` キー or Mono ボタン）。CSS `filter` で透視風（grayscale/contrast/brightness、反転で X 線風）
 - **保存**は Rec のセッション録画のみ。`navigator.share()`（写真 App 等へ）→ 非対応なら `<a download>` にフォールバック
 - **USB/BT フットスイッチのキー割り当て**。開始画面で登録し `localStorage` に永続化
+- **ライト（Light ボタン）**。`track.applyConstraints({advanced:[{torch:true}]})` で iPhone のライトを点ける。ペダルとは独立で、
+  点けっぱなしが通常運用。設定は `localStorage`（`fluoro.torch`）に残り、次のセッションで自動的に点く
 - **マーカーアライメント**（`marker-align` ブランチ、実機未確認）。模型の四隅に貼った ArUco マーカーを Align ボタンで1回だけ検出し、
   画面中央に水平な矩形へ射影変換する。ArUco 検出器は依存ゼロの自前実装（`DICT_4X4_50`）
 
@@ -70,6 +72,9 @@ Claude Code 向けのプロジェクト指示・引き継ぎメモ。
 - **`MediaRecorder` は MIME タイプを指定しない**（`new MediaRecorder(stream)`）。Safari の MIME 処理に癖があり未指定が最も安定。保存拡張子は `blob.type` から判定
 - **PWA standalone だとカメラ許可が毎回プロンプトされる**（WebKit Bug #215884）。Safari で直接 URL を開けば回避できる（実用上は毎回1タップでも可）
 - **表示モードの CSS filter は録画に入らない**。`filter` は `#camera` / `#replay-video` の表示にかかるだけで、`MediaRecorder` は生の `stream` を録っている（`beginAcquire` とセッション録画の両方）。つまり **Rec で保存されるファイルは透視風ではなく生のカラー映像**で、画面と保存物が食い違う。見たままを録りたければ canvas 描画 + `canvas.captureStream()` へ移す必要がある
+- **ライトは iOS Safari 17.4 以降**。それ以前や非対応カメラでは `getCapabilities().torch` が立たないので、ボタン自体を隠す（`hidden`）
+  - **本番の照明として使うには2つ難がある**。①ライトがレンズのすぐ横なので**同軸照明になり、光沢シールや濡れた面からの正反射が最悪**
+    ②暗箱に閉じ込めたスマホでライトを焚き続けると発熱が増える（4K 化の発熱懸念と足し算になる）。**動作確認用と割り切り、本番は蓋側の LED を別に用意する**のが無難
 - **マーカーの ID が模型の向きの契約**。`0`=左上 `1`=右上 `2`=右下 `3`=左下（時計回り）。模型を作る側と共有する唯一の取り決めなので、勝手に変えない
 - **検出は1回だけ、あとは CSS `transform: matrix3d`**。模型は箱の中で動かないので毎フレーム検出は不要。合成は GPU 側で終わるのでライブ経路のコストはゼロ、ペダルの応答も変わらない
   - `localStorage`（`fluoro.align`）には行列ではなく**4点の動画ピクセル座標**を保存する。回転・リサイズのたびに行列を作り直せるため

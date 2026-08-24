@@ -389,6 +389,11 @@ body {
   color: #fc6;
   border-color: rgba(255,204,102,0.35);
 }
+.ctrl-btn.torch-active {
+  color: #fff;
+  border-color: rgba(255,255,255,0.45);
+}
+.ctrl-btn[hidden] { display: none; }
 
 #align-toast {
   position: absolute;
@@ -646,6 +651,7 @@ body {
   <div id="bottom-bar">
     <button class="ctrl-btn" id="btn-session-rec" onclick="toggleSessionRecording()">● Rec</button>
     <button class="ctrl-btn" id="btn-align" onclick="toggleAlign()">Align</button>
+    <button class="ctrl-btn" id="btn-torch" onclick="toggleTorch()" hidden>Light</button>
     <button class="ctrl-btn" id="btn-inv" onclick="cycleView()">Mono</button>
   </div>
 
@@ -721,6 +727,7 @@ const btnSessRec  = $('btn-session-rec');
 const sessBadge   = $('session-rec-badge');
 const bottomBar   = $('bottom-bar');
 const saveOvl     = $('save-overlay');
+const btnTorch    = $('btn-torch');
 const replayBox   = $('replay');
 const replayVideo = $('replay-video');
 
@@ -740,6 +747,8 @@ function resetToStart() {
     sessBadge.classList.remove('active');
   }
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  torchOn = false;                 // stopping the track puts the lamp out
+  updateTorchButton();
   showScreen('start');
 }
 
@@ -761,6 +770,7 @@ $('btn-start').addEventListener('click', async () => {
     resetControlTimer();
     updateAlignButton();
     applyAlign();
+    initTorch();
   } catch (err) {
     let msg;
     if (err.name === 'NotAllowedError')
@@ -1625,6 +1635,56 @@ function updateAlignButton() {
   const b = $('btn-align');
   b.textContent = alignPts ? 'Align ✓' : 'Align';
   b.classList.toggle('align-active', !!alignPts);
+}
+
+/* ---- Torch: the phone's own lamp as the box light ----
+   iOS Safari has taken the torch constraint since 17.4, so an iPhone 15 on
+   a current iOS can light the box without any wiring. Kept independent of
+   the pedals: the lamp is there to light the model, not to stand in for the
+   X-ray, so leaving it on for the whole session is the normal case. */
+
+const TORCH_KEY = 'fluoro.torch';
+let torchOn = false;
+let torchSupported = false;
+
+function torchTrack() {
+  const t = stream && stream.getVideoTracks()[0];
+  return t && typeof t.applyConstraints === 'function' ? t : null;
+}
+
+async function initTorch() {
+  const t = torchTrack();
+  let caps = null;
+  try { caps = t && typeof t.getCapabilities === 'function' ? t.getCapabilities() : null; }
+  catch (_) { caps = null; }
+  torchSupported = !!(caps && caps.torch);
+  torchOn = false;
+  btnTorch.hidden = !torchSupported;
+  updateTorchButton();
+  // The lamp is part of the rig, so a session picks up where the last left off.
+  if (torchSupported && localStorage.getItem(TORCH_KEY) === '1') await setTorch(true);
+}
+
+async function setTorch(on) {
+  const t = torchTrack();
+  if (!t || !torchSupported) return false;
+  try {
+    await t.applyConstraints({ advanced: [{ torch: on }] });
+  } catch (e) {
+    alignToast('ライトを切り替えられませんでした', true);
+    return false;
+  }
+  torchOn = on;
+  localStorage.setItem(TORCH_KEY, on ? '1' : '0');
+  updateTorchButton();
+  return true;
+}
+
+function toggleTorch() { setTorch(!torchOn); }
+
+function updateTorchButton() {
+  btnTorch.textContent = torchOn ? 'Light ✓' : 'Light';
+  btnTorch.classList.toggle('torch-active', torchOn);
 }
 
 window.addEventListener('resize', applyAlign);
