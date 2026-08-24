@@ -1434,7 +1434,7 @@ function applyHomography(H, x, y) {
 }
 
 /* Read the 6x6 module grid out of a candidate quad. */
-function readMarker(gray, w, h, quad) {
+function readMarker(gray, w, h, quad, stats) {
   const H = solveHomography([[0, 0], [1, 0], [1, 1], [0, 1]], quad);
   if (!H) return null;
   const means = new Float64Array(36);
@@ -1460,7 +1460,7 @@ function readMarker(gray, w, h, quad) {
     const g = sorted[i] - sorted[i - 1];
     if (g > gap) { gap = g; cut = (sorted[i] + sorted[i - 1]) / 2; }
   }
-  if (gap < 12) return null;               // no real black/white split
+  if (gap < 12) { if (stats) stats.lowContrast++; return null; }   // no black/white split
   const bits = Array.from(means, m => (m > cut ? 1 : 0));
 
   let borderErrors = 0;
@@ -1469,11 +1469,13 @@ function readMarker(gray, w, h, quad) {
       if (r === 0 || c === 0 || r === 5 || c === 5) borderErrors += bits[r * 6 + c];
     }
   }
-  if (borderErrors > 2) return null;
+  if (borderErrors > 2) { if (stats) stats.badBorder++; return null; }
 
   let code = 0;
   for (let r = 1; r <= 4; r++) for (let c = 1; c <= 4; c++) code = (code << 1) | bits[r * 6 + c];
-  return arucoMatch(code);
+  const hit = arucoMatch(code);
+  if (!hit && stats) stats.noMatch++;
+  return hit;
 }
 
 /* Detect every marker in an ImageData. Returns
@@ -1486,6 +1488,12 @@ function detectMarkers(imageData, opts = {}) {
   const minSide = opts.minMarkerPx || Math.max(12, Math.round(Math.min(w, h) * 0.02));
   const contours = findContours(bin, w, h, minSide * 3);
 
+  /* Telling "the square was never found" apart from "the square was found but
+     could not be read" separates a contrast problem from a glare or focus
+     problem, so count both. */
+  const stats = opts.stats;
+  if (stats) Object.assign(stats, { candidates: 0, lowContrast: 0, badBorder: 0, noMatch: 0 });
+
   const found = [];
   for (const pts of contours) {
     const perim = pts.length / 2;
@@ -1497,8 +1505,9 @@ function detectMarkers(imageData, opts = {}) {
     const sides = quad.map((p, i) => Math.hypot(quad[(i + 1) % 4][0] - p[0], quad[(i + 1) % 4][1] - p[1]));
     if (Math.min(...sides) / Math.max(...sides) < 0.25) continue;
 
+    if (stats) stats.candidates++;
     let q = polyArea(quad) < 0 ? quad.slice().reverse() : quad;
-    const hit = readMarker(gray, w, h, q);
+    const hit = readMarker(gray, w, h, q, stats);
     if (!hit) continue;
     // Undo the rotation the dictionary match reported so corners[0] is
     // always the marker's own top-left.
@@ -1667,7 +1676,7 @@ function enterAlignMode() {
   camera.style.transform = '';        // aim on the untransformed frame
   alignOverlay.classList.add('active');
   updateAlignButton();
-  alignToast('マーカー ID 0-3 が4つとも入るように構えてください');
+  alignToast('マーカー ID 0-3 が4つとも入るように構えてください（映像をタップでフレーム書き出し）');
   alignTick();
 }
 
@@ -1686,8 +1695,9 @@ function alignTick() {
   if (!frame) { alignTimer = setTimeout(alignTick, 200); return; }
 
   const started = performance.now();
+  const stats = {};
   let found = [];
-  try { found = detectMarkers(frame); } catch (_) { /* keep the loop alive */ }
+  try { found = detectMarkers(frame, { stats }); } catch (_) { /* keep the loop alive */ }
   const ms = Math.round(performance.now() - started);
 
   const seen = {};
@@ -1728,7 +1738,9 @@ function alignTick() {
     if (n === 3) note = ' · 4つ目を探しています';
   }
 
-  alignToast(`検出 ${n}/4${note} · ${ms}ms`, n < 3);
+  const unread = (stats.lowContrast || 0) + (stats.badBorder || 0) + (stats.noMatch || 0);
+  const diag = n < 4 ? ` · 四角形 ${stats.candidates || 0} / 読めず ${unread}` : '';
+  alignToast(`検出 ${n}/4${note}${diag} · ${ms}ms`, n < 3);
   alignTimer = setTimeout(alignTick, 0);
 }
 
@@ -1760,6 +1772,32 @@ function drawAlignOverlay(seen, vw, vh) {
     ctx.fillText(id, cx, cy + 4);
   }
 }
+
+/* The frame the detector actually saw, at full resolution. A screenshot is a
+   photo of the screen after scaling and display processing, which is not the
+   same picture and loses exactly the detail a decode failure turns on. */
+function exportAlignFrame() {
+  const w = camera.videoWidth, h = camera.videoHeight;
+  if (!w || !h) return;
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  cv.getContext('2d').drawImage(camera, 0, 0, w, h);
+  alignToast('フレームを書き出しています…');
+  cv.toBlob(async (blob) => {
+    if (!blob) { alignToast('フレームを取得できませんでした', true); return; }
+    const file = new File([blob], 'align-frame.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; } catch (_) { /* fall through */ }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'align-frame.png';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }, 'image/png');
+}
+
+$('camera-wrap').addEventListener('click', () => { if (alignMode) exportAlignFrame(); });
 
 function clearAlign() {
   alignPts = null;

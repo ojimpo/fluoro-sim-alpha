@@ -150,7 +150,9 @@ const loadApp = () => new Promise(res => {
   const truth = await (await fetch('fixtures/truth.json')).json();
   for (const name of CASES) {
     try {
-      const found = w.detectMarkers(imageDataOf(await load(`fixtures/${name}.png`)));
+      const stats = {};
+      const found = w.detectMarkers(imageDataOf(await load(`fixtures/${name}.png`)), { stats });
+      if (stats.candidates < found.length) throw new Error('candidates < decoded');
       const t = truth[name];
       let err = 0;
       for (const f of found) {
