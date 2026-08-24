@@ -215,6 +215,9 @@ body {
 #live-screen.aligning #standby-label,
 #live-screen.aligning #rotate-hint { display: none; }
 #live-screen.aligning #align-toast { top: 9%; bottom: auto; }
+/* Locking in and going straight back to black hides the very thing that was
+   just set up, so the aligned frame stays on screen long enough to check. */
+#live-screen.align-preview #camera { opacity: 1; }
 
 #align-overlay {
   position: absolute;
@@ -810,6 +813,9 @@ $('btn-start').addEventListener('click', async () => {
 
 // --- Exposure (camera visibility) ---
 function setExposure(on) {
+  // A real pedal press ends the post-alignment preview.
+  clearTimeout(alignPreviewTimer);
+  liveScreen.classList.remove('align-preview');
   camera.classList.toggle('exposing', on);
   standby.classList.toggle('hidden', on);
 }
@@ -1613,6 +1619,17 @@ function grabFrame() {
    mode; the fluoro path still runs on the fixed CSS matrix. */
 let alignMode = false;
 let alignTimer = null;
+let alignPreviewTimer = null;
+const ALIGN_PREVIEW_MS = 6000;
+
+/* Hold the aligned frame up, with the normal fluoro look, so the result of
+   the alignment is actually visible before the pedal takes over again. */
+function showAlignPreview() {
+  liveScreen.classList.add('align-preview');
+  clearTimeout(alignPreviewTimer);
+  alignPreviewTimer = setTimeout(
+    () => liveScreen.classList.remove('align-preview'), ALIGN_PREVIEW_MS);
+}
 
 function centreOf(marker) {
   return [marker.corners.reduce((s, p) => s + p[0], 0) / 4,
@@ -1621,6 +1638,8 @@ function centreOf(marker) {
 
 function enterAlignMode() {
   if (!stream) { alignToast('カメラの準備ができていません', true); return; }
+  clearTimeout(alignPreviewTimer);
+  liveScreen.classList.remove('align-preview');
   alignMode = true;
   liveScreen.classList.add('aligning');
   camera.style.transform = '';        // aim on the untransformed frame
@@ -1664,9 +1683,10 @@ function alignTick() {
       alignPts = pts;
       saveAlign();
       exitAlignMode();
+      showAlignPreview();
       alignToast(filled !== null
-        ? `3個で位置合わせしました（ID ${filled} は推定）`
-        : '位置合わせしました');
+        ? `3個で位置合わせしました（ID ${filled} は推定）・確認できます`
+        : '位置合わせしました・確認できます');
       return;
     }
     note = ' · 並びが四角形になっていません';
