@@ -115,6 +115,23 @@ function quadGuardTest(w) {
   return { ok: bad.length === 0, bad: bad.join(' | ') };
 }
 
+/* A handheld wobble must not count as a settled quad. */
+function settleTest(w) {
+  const base = [[420,180],[1500,240],[1450,900],[380,840]];
+  const nudge = (dx) => base.map(([x,y]) => [x+dx, y]);
+  const cases = [
+    [base,        true,  'identical'],
+    [nudge(5),    true,  'within tolerance'],
+    [nudge(40),   false, 'handheld drift'],
+  ];
+  const bad = [];
+  for (const [pts, want, why] of cases) {
+    if (w.alignQuadSettled(pts, base, 1920) !== want) bad.push(why);
+  }
+  if (w.alignQuadSettled(base, null, 1920) !== false) bad.push('no previous quad');
+  return { ok: bad.length === 0, bad: bad.join(' | ') };
+}
+
 /* Three markers must still produce a usable quad. */
 function completeQuadTest(w) {
   const byId = { 0: [0, 0], 1: [10, 0], 3: [0, 10] };
@@ -157,6 +174,7 @@ const loadApp = () => new Promise(res => {
 
   for (const [name, fn] of [['align:matrix', alignTest], ['align:persist', persistTest],
                             ['align:quadGuard', quadGuardTest],
+                            ['align:settle', settleTest],
                             ['align:completeQuad', completeQuadTest]]) {
     try { results.push({ test: name, ...fn(w) }); }
     catch (e) { results.push({ test: name, ok: false, why: String(e && e.message || e) }); }

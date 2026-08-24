@@ -1619,6 +1619,24 @@ function grabFrame() {
    mode; the fluoro path still runs on the fixed CSS matrix. */
 let alignMode = false;
 let alignTimer = null;
+let alignEnteredAt = 0;
+let alignStreak = 0;
+let alignPrev = null;
+let alignPrevCount = 0;
+/* Three markers is a fallback for a sticker that cannot be read at all, not
+   for the frame where a handheld wobble dropped one. Hold out for four. */
+const ALIGN_FALLBACK_MS = 3000;
+/* Locking on a motion-blurred frame bakes in sloppy corners, so the same
+   quad has to come back a few times before it counts. */
+const ALIGN_STABLE_FRAMES = 3;
+const ALIGN_STABLE_TOLERANCE = 0.012;   // of frame width
+
+// Takes the previous quad explicitly so it can be exercised on its own.
+function alignQuadSettled(pts, prev, frameWidth) {
+  if (!prev) return false;
+  const tol = frameWidth * ALIGN_STABLE_TOLERANCE;
+  return pts.every((p, i) => Math.hypot(p[0] - prev[i][0], p[1] - prev[i][1]) < tol);
+}
 let alignPreviewTimer = null;
 const ALIGN_PREVIEW_MS = 6000;
 
@@ -1641,6 +1659,10 @@ function enterAlignMode() {
   clearTimeout(alignPreviewTimer);
   liveScreen.classList.remove('align-preview');
   alignMode = true;
+  alignEnteredAt = performance.now();
+  alignStreak = 0;
+  alignPrev = null;
+  alignPrevCount = 0;
   liveScreen.classList.add('aligning');
   camera.style.transform = '';        // aim on the untransformed frame
   alignOverlay.classList.add('active');
@@ -1673,24 +1695,39 @@ function alignTick() {
   drawAlignOverlay(seen, frame.width, frame.height);
 
   const n = Object.keys(seen).length;
+  const mayUseThree = performance.now() - alignEnteredAt > ALIGN_FALLBACK_MS;
   let note = '';
-  if (n >= 3) {
+
+  if (n === 4 || (n === 3 && mayUseThree)) {
     const centres = {};
     for (const id of Object.keys(seen)) centres[id] = centreOf(seen[id]);
     const filled = n === 3 ? completeQuad(centres) : null;
     const pts = [centres[0], centres[1], centres[2], centres[3]];
     if (quadUsable(pts, frame.width * frame.height)) {
-      alignPts = pts;
-      saveAlign();
-      exitAlignMode();
-      showAlignPreview();
-      alignToast(filled !== null
-        ? `3個で位置合わせしました（ID ${filled} は推定）・確認できます`
-        : '位置合わせしました・確認できます');
-      return;
+      alignStreak = (n === alignPrevCount && alignQuadSettled(pts, alignPrev, frame.width))
+        ? alignStreak + 1 : 1;
+      alignPrev = pts;
+      alignPrevCount = n;
+      if (alignStreak >= ALIGN_STABLE_FRAMES) {
+        alignPts = pts;
+        saveAlign();
+        exitAlignMode();
+        showAlignPreview();
+        alignToast(filled !== null
+          ? `3個で位置合わせしました（ID ${filled} は推定）・確認できます`
+          : '位置合わせしました・確認できます');
+        return;
+      }
+      note = ' · そのまま止めてください';
+    } else {
+      note = ' · 並びが四角形になっていません';
+      alignStreak = 0; alignPrev = null; alignPrevCount = 0;
     }
-    note = ' · 並びが四角形になっていません';
+  } else {
+    alignStreak = 0; alignPrev = null; alignPrevCount = 0;
+    if (n === 3) note = ' · 4つ目を探しています';
   }
+
   alignToast(`検出 ${n}/4${note} · ${ms}ms`, n < 3);
   alignTimer = setTimeout(alignTick, 0);
 }
