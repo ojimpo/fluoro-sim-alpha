@@ -188,12 +188,19 @@ body {
   inset: 0;
 }
 
+#camera-wrap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;      /* the alignment transform pushes the frame past the viewport */
+}
+
 #camera {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  transform-origin: 0 0; /* matrix3d below is built in element pixel coords */
   filter: grayscale(1) contrast(1.3) brightness(1.1);
   opacity: 0;
   transition: opacity 0.04s;
@@ -378,6 +385,31 @@ body {
   color: #7ac;
   border-color: rgba(120,180,220,0.35);
 }
+.ctrl-btn.align-active {
+  color: #fc6;
+  border-color: rgba(255,204,102,0.35);
+}
+
+#align-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 22%;
+  transform: translateX(-50%);
+  padding: 8px 18px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: #bbb;
+  background: rgba(0,0,0,0.72);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.18s;
+  pointer-events: none;
+  z-index: 30;
+  white-space: nowrap;
+}
+#align-toast.show { opacity: 1; }
+#align-toast.bad { color: #e88; border-color: rgba(238,120,120,0.3); }
 
 /* --- Session recording badge (top center, independent of pedals) --- */
 #session-rec-badge {
@@ -583,7 +615,9 @@ body {
 
 <!-- Live Screen -->
 <div id="live-screen">
-  <video id="camera" autoplay playsinline muted></video>
+  <div id="camera-wrap"><video id="camera" autoplay playsinline muted></video></div>
+
+  <div id="align-toast"></div>
 
   <div id="standby-label"><span>standby</span></div>
 
@@ -611,6 +645,7 @@ body {
 
   <div id="bottom-bar">
     <button class="ctrl-btn" id="btn-session-rec" onclick="toggleSessionRecording()">● Rec</button>
+    <button class="ctrl-btn" id="btn-align" onclick="toggleAlign()">Align</button>
     <button class="ctrl-btn" id="btn-inv" onclick="cycleView()">Mono</button>
   </div>
 
@@ -724,6 +759,8 @@ $('btn-start').addEventListener('click', async () => {
     await camera.play();
     showScreen('live');
     resetControlTimer();
+    updateAlignButton();
+    applyAlign();
   } catch (err) {
     let msg;
     if (err.name === 'NotAllowedError')
@@ -1431,6 +1468,154 @@ function detectMarkers(imageData, opts = {}) {
   }
   return found;
 }
+
+/* ---- Alignment: turn four detected markers into a CSS transform ----
+   Marker ids 0..3 are the model's top-left, top-right, bottom-right and
+   bottom-left. That is the whole interface contract with whoever makes
+   the model. */
+
+const ALIGN_KEY = 'fluoro.align';
+const ALIGN_MARGIN = 0.04;        // of the viewport, kept clear around the model
+let alignPts = loadAlign();       // 4 marker centres in video pixels, or null
+
+function loadAlign() {
+  try {
+    const a = JSON.parse(localStorage.getItem(ALIGN_KEY));
+    return (Array.isArray(a?.pts) && a.pts.length === 4) ? a.pts : null;
+  } catch { return null; }
+}
+
+function saveAlign() {
+  if (alignPts) localStorage.setItem(ALIGN_KEY, JSON.stringify({ pts: alignPts }));
+  else localStorage.removeItem(ALIGN_KEY);
+}
+
+/* Where a video pixel lands inside the element box. #camera is
+   object-fit: contain, so it is one uniform scale plus a letterbox offset. */
+function videoToElement(vw, vh, ew, eh) {
+  const s = Math.min(ew / vw, eh / vh);
+  return { s, ox: (ew - vw * s) / 2, oy: (eh - vh * s) / 2 };
+}
+
+/* The model's real aspect ratio is not recoverable from four coplanar
+   points alone without knowing the focal length. Averaging opposite edges
+   is close enough while the camera looks nearly straight down, which is
+   the only way it is ever mounted in the box. */
+function quadAspect(p) {
+  const d = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+  return ((d(p[0], p[1]) + d(p[3], p[2])) / 2) / ((d(p[0], p[3]) + d(p[1], p[2])) / 2 || 1);
+}
+
+function applyAlign() {
+  if (!alignPts || !camera.videoWidth) {
+    camera.style.transform = '';
+    return;
+  }
+  const ew = camera.clientWidth, eh = camera.clientHeight;
+  if (!ew || !eh) return;
+  const { s, ox, oy } = videoToElement(camera.videoWidth, camera.videoHeight, ew, eh);
+  const src = alignPts.map(([x, y]) => [ox + x * s, oy + y * s]);
+
+  const aspect = quadAspect(alignPts);
+  const availW = ew * (1 - 2 * ALIGN_MARGIN), availH = eh * (1 - 2 * ALIGN_MARGIN);
+  let tw, th;
+  if (availW / availH > aspect) { th = availH; tw = th * aspect; }
+  else { tw = availW; th = tw / aspect; }
+  const tx = (ew - tw) / 2, ty = (eh - th) / 2;
+  const dst = [[tx, ty], [tx + tw, ty], [tx + tw, ty + th], [tx, ty + th]];
+
+  const H = solveHomography(src, dst);
+  if (!H) { camera.style.transform = ''; return; }
+  camera.style.transform =
+    `matrix3d(${H[0]},${H[3]},0,${H[6]}, ${H[1]},${H[4]},0,${H[7]}, 0,0,1,0, ${H[2]},${H[5]},0,1)`;
+}
+
+/* Three markers still pin down a parallelogram, which is a good enough
+   stand-in for the fourth when a sticker is smudged or hidden. */
+function completeQuad(byId) {
+  const missing = [0, 1, 2, 3].filter(i => !byId[i]);
+  if (missing.length !== 1) return null;
+  const m = missing[0];
+  const opposite = (m + 2) % 4, a = (m + 1) % 4, b = (m + 3) % 4;
+  byId[m] = [byId[a][0] + byId[b][0] - byId[opposite][0],
+             byId[a][1] + byId[b][1] - byId[opposite][1]];
+  return m;
+}
+
+function alignToast(msg, bad) {
+  const el = $('align-toast');
+  el.textContent = msg;
+  el.classList.toggle('bad', !!bad);
+  el.classList.add('show');
+  clearTimeout(alignToast.timer);
+  alignToast.timer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function grabFrame() {
+  const w = camera.videoWidth, h = camera.videoHeight;
+  if (!w || !h) return null;
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  // drawImage takes the raw frame: the fluoro look is a CSS filter and
+  // never reaches the pixels, which is exactly what detection wants.
+  ctx.drawImage(camera, 0, 0, w, h);
+  return ctx.getImageData(0, 0, w, h);
+}
+
+function runAlign() {
+  const frame = grabFrame();
+  if (!frame) { alignToast('カメラの準備ができていません', true); return; }
+  alignToast('マーカーを探しています…');
+  // Let the toast paint before the detector locks up the main thread.
+  setTimeout(() => {
+    let found;
+    try { found = detectMarkers(frame); }
+    catch (e) { alignToast('検出に失敗しました: ' + e.message, true); return; }
+
+    const byId = {};
+    for (const m of found) {
+      if (m.id > 3) continue;
+      byId[m.id] = [m.corners.reduce((s, p) => s + p[0], 0) / 4,
+                    m.corners.reduce((s, p) => s + p[1], 0) / 4];
+    }
+    const n = Object.keys(byId).length;
+    if (n < 3) {
+      alignToast(`マーカーが ${n} 個しか見つかりません（ID 0-3 が4つ必要）`, true);
+      return;
+    }
+    const filled = n === 3 ? completeQuad(byId) : null;
+    alignPts = [byId[0], byId[1], byId[2], byId[3]];
+    saveAlign();
+    applyAlign();
+    updateAlignButton();
+    alignToast(filled !== null
+      ? `3個で位置合わせしました（ID ${filled} は推定）`
+      : '位置合わせしました');
+  }, 60);
+}
+
+function clearAlign() {
+  alignPts = null;
+  saveAlign();
+  applyAlign();
+  updateAlignButton();
+  alignToast('位置合わせを解除しました');
+}
+
+function toggleAlign() {
+  if (alignPts) clearAlign(); else runAlign();
+}
+
+function updateAlignButton() {
+  const b = $('btn-align');
+  b.textContent = alignPts ? 'Align ✓' : 'Align';
+  b.classList.toggle('align-active', !!alignPts);
+}
+
+window.addEventListener('resize', applyAlign);
+window.addEventListener('orientationchange', () => setTimeout(applyAlign, 250));
+camera.addEventListener('loadedmetadata', applyAlign);
 
 // --- Auto-hide controls ---
 function resetControlTimer() {

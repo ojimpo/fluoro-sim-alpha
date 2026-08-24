@@ -21,8 +21,90 @@ function imageDataOf(im) {
   return ctx.getImageData(0, 0, cv.width, cv.height);
 }
 
+/* Drive the app's own applyAlign(), then measure where four probe dots
+   actually land once the browser has applied the matrix it produced.
+   This is what catches a wrong matrix3d argument order. */
+const ALIGN_PTS = [[420, 180], [1500, 240], [1450, 900], [380, 840]];
 
+function alignTest(w) {
+  const doc = w.document;
+  const pts = ALIGN_PTS;                 // already restored from localStorage
+  const vw = 1920, vh = 1080;
+  const camera = doc.getElementById('camera');
+  Object.defineProperty(camera, 'videoWidth',  { value: vw, configurable: true });
+  Object.defineProperty(camera, 'videoHeight', { value: vh, configurable: true });
+  doc.getElementById('live-screen').style.display = 'block';
 
+  w.applyAlign();
+  const t = camera.style.transform;
+  if (!t.startsWith('matrix3d')) return { ok: false, why: 'no matrix3d: ' + t };
+
+  const ew = camera.clientWidth, eh = camera.clientHeight;
+  const { s, ox, oy } = w.videoToElement(vw, vh, ew, eh);
+
+  const probe = doc.createElement('div');
+  probe.style.cssText =
+    `position:absolute;inset:0;transform-origin:0 0;transform:${t};pointer-events:none`;
+  const dots = pts.map(([x, y]) => {
+    const d = doc.createElement('div');
+    d.style.cssText = `position:absolute;width:0;height:0;left:${ox + x * s}px;top:${oy + y * s}px`;
+    probe.appendChild(d);
+    return d;
+  });
+  doc.getElementById('camera-wrap').appendChild(probe);
+  const wrapBox = doc.getElementById('camera-wrap').getBoundingClientRect();
+  const got = dots.map(d => {
+    const r = d.getBoundingClientRect();
+    return [r.left - wrapBox.left, r.top - wrapBox.top];
+  });
+  probe.remove();
+
+  // The four points should land on a centred, axis-aligned rectangle.
+  const xs = got.map(p => p[0]), ys = got.map(p => p[1]);
+  const left = Math.min(...xs), right = Math.max(...xs);
+  const top = Math.min(...ys), bottom = Math.max(...ys);
+  const squareness = Math.max(
+    Math.abs(got[0][1] - got[1][1]), Math.abs(got[3][1] - got[2][1]),
+    Math.abs(got[0][0] - got[3][0]), Math.abs(got[1][0] - got[2][0]));
+  const centreErr = Math.max(Math.abs((left + right) / 2 - ew / 2),
+                             Math.abs((top + bottom) / 2 - eh / 2));
+  const margin = Math.min(left, top, ew - right, eh - bottom);
+  const expectMargin = Math.min(ew, eh) * 0.04;
+  return {
+    ok: squareness < 0.6 && centreErr < 0.6 && margin > expectMargin - 1.5,
+    squareness: +squareness.toFixed(2), centreErr: +centreErr.toFixed(2),
+    margin: +margin.toFixed(1), expectMargin: +expectMargin.toFixed(1),
+    rect: [left, top, right, bottom].map(v => +v.toFixed(1))
+  };
+}
+
+/* loadAlign() is the guard that has to survive a half-written or
+   stale localStorage record, so poke it with the shapes that matter. */
+function persistTest(w) {
+  const store = w.localStorage, KEY = 'fluoro.align';
+  const saved = store.getItem(KEY);
+  const cases = [
+    [JSON.stringify({ pts: ALIGN_PTS }), JSON.stringify(ALIGN_PTS)],
+    ['not json',                          'null'],
+    [JSON.stringify({ pts: [[1, 2]] }),   'null'],
+    [JSON.stringify({}),                  'null'],
+  ];
+  const bad = [];
+  for (const [raw, want] of cases) {
+    store.setItem(KEY, raw);
+    const got = JSON.stringify(w.loadAlign());
+    if (got !== want) bad.push(`${raw} -> ${got}`);
+  }
+  if (saved === null) store.removeItem(KEY); else store.setItem(KEY, saved);
+  return { ok: bad.length === 0, bad: bad.join(' | ') };
+}
+
+/* Three markers must still produce a usable quad. */
+function completeQuadTest(w) {
+  const byId = { 0: [0, 0], 1: [10, 0], 3: [0, 10] };
+  const filled = w.completeQuad(byId);
+  return { ok: filled === 2 && byId[2][0] === 10 && byId[2][1] === 10, filled, got: byId[2] };
+}
 
 const frame = document.getElementById('app');
 const loadApp = () => new Promise(res => {
@@ -31,7 +113,7 @@ const loadApp = () => new Promise(res => {
 });
 
 (async () => {
-  const w = await loadApp();
+  let w = await loadApp();
   const truth = await (await fetch('fixtures/truth.json')).json();
   for (const name of CASES) {
     try {
@@ -52,6 +134,17 @@ const loadApp = () => new Promise(res => {
       results.push({ test: `detect:${name}`, ok: false, why: String(e && e.message || e) });
     }
   }
+  // Reload the app with an alignment already stored, which is both how a
+  // returning user starts and the only way to reach the module-scoped state.
+  w.localStorage.setItem('fluoro.align', JSON.stringify({ pts: ALIGN_PTS }));
+  w = await loadApp();
+
+  for (const [name, fn] of [['align:matrix', alignTest], ['align:persist', persistTest],
+                            ['align:completeQuad', completeQuadTest]]) {
+    try { results.push({ test: name, ...fn(w) }); }
+    catch (e) { results.push({ test: name, ok: false, why: String(e && e.message || e) }); }
+  }
+  w.localStorage.removeItem('fluoro.align');
   document.getElementById('out').textContent = 'RESULT ' + JSON.stringify(results);
 })();
 </script>
