@@ -1530,6 +1530,15 @@ function applyAlign() {
     `matrix3d(${H[0]},${H[3]},0,${H[6]}, ${H[1]},${H[4]},0,${H[7]}, 0,0,1,0, ${H[2]},${H[5]},0,1)`;
 }
 
+/* The printable sheet carries ids 0-3 along its top row, so pointing the
+   camera at an uncut sheet gives four collinear points and a homography
+   that collapses. Anything degenerate has to be refused rather than warped
+   into nonsense. */
+function quadUsable(pts, frameArea) {
+  if (pts.some(p => !p)) return false;
+  return isConvex(pts) && Math.abs(polyArea(pts)) > frameArea * 0.005;
+}
+
 /* Three markers still pin down a parallelogram, which is a good enough
    stand-in for the fourth when a sticker is smudged or hidden. */
 function completeQuad(byId) {
@@ -1585,7 +1594,12 @@ function runAlign() {
       return;
     }
     const filled = n === 3 ? completeQuad(byId) : null;
-    alignPts = [byId[0], byId[1], byId[2], byId[3]];
+    const pts = [byId[0], byId[1], byId[2], byId[3]];
+    if (!quadUsable(pts, frame.width * frame.height)) {
+      alignToast('マーカーの並びが四角形になっていません（模型の四隅に貼ってください）', true);
+      return;
+    }
+    alignPts = pts;
     saveAlign();
     applyAlign();
     updateAlignButton();

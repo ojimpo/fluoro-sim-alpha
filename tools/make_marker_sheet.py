@@ -11,8 +11,9 @@
 余白（quiet zone）は検出に必須。黒枠の外側に最低1モジュールぶんの白が要る。
 切り取り線は quiet zone の外に引いてあるので、線の上で切れば余白が残る。
 
-  python3 tools/make_marker_sheet.py            # PDF と PNG を出力
+  python3 tools/make_marker_sheet.py            # 貼る用の L判シール紙シート
   python3 tools/make_marker_sheet.py --mm 12    # 12mm 版
+  python3 tools/make_marker_sheet.py --target   # 試す用の A4 テストターゲット
 """
 import argparse
 
@@ -23,6 +24,7 @@ from PIL import Image, ImageDraw, ImageFont
 DPI = 600
 # L判 89x127mm。127mm はちょうど 5inch なので高さは端数が出ない
 PAGE_W_MM, PAGE_H_MM = 89.0, 127.0
+A4_W_MM, A4_H_MM = 210.0, 297.0
 COLS, ROWS = 4, 4
 QUIET_MM = 3.0      # 黒枠の外側の白。4x4 なら 1 モジュール = 約1.7mm なので余裕を見て 3mm
 LABEL_MM = 4.0      # 切り取り線の外に出す ID 文字の帯
@@ -75,12 +77,61 @@ def build(marker_mm: float) -> tuple[Image.Image, float]:
     return page, actual_mm
 
 
+def build_target(marker_mm: float) -> Image.Image:
+    """A4 で 1 枚刷るだけで検出を試せる的。
+
+    貼る用のシートは ID 0-3 が最初の行に横一列に並ぶので、そのままカメラを
+    向けても 4 点が一直線になって射影変換が退化する。こちらは ID 0-3 を
+    模型と同じ時計回り（左上・右上・右下・左下）に置いてある。
+    """
+    module_px = max(1, round(mm(marker_mm) / 6))
+    marker_px = module_px * 6
+    quiet_px = mm(QUIET_MM)
+    page = Image.new("L", (mm(A4_W_MM), mm(A4_H_MM)), 255)
+    draw = ImageDraw.Draw(page)
+    try:
+        font = ImageFont.truetype("DejaVuSans.ttf", size=mm(4))
+    except OSError:
+        font = ImageFont.load_default()
+
+    inset = mm(18)
+    aruco = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+    spots = [(inset, inset), (page.width - inset - marker_px, inset),
+             (page.width - inset - marker_px, page.height - inset - marker_px),
+             (inset, page.height - inset - marker_px)]
+    for marker_id, (x, y) in enumerate(spots):
+        draw.rectangle([x - quiet_px, y - quiet_px,
+                        x + marker_px + quiet_px, y + marker_px + quiet_px], fill=255)
+        img = cv2.aruco.generateImageMarker(aruco, marker_id, marker_px, borderBits=1)
+        page.paste(Image.fromarray(np.asarray(img)), (x, y))
+
+    draw.text((page.width // 2, page.height // 2 - mm(6)),
+              "fluoro-sim alignment target", fill=110, font=font, anchor="mm")
+    draw.text((page.width // 2, page.height // 2 + mm(2)),
+              "ids 0-3 clockwise from top-left", fill=150, font=font, anchor="mm")
+    draw.text((page.width // 2, page.height // 2 + mm(10)),
+              "print at any scale - detection does not care", fill=150, font=font, anchor="mm")
+    print(f"target: marker {marker_px / DPI * 25.4:.2f}mm on A4")
+    return page
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mm", type=float, default=10.0, help="マーカーの一辺 (既定 10mm)")
-    ap.add_argument("--out", default="marker-sheet", help="出力名 (拡張子なし)")
+    ap.add_argument("--out", default=None, help="出力名 (拡張子なし)")
+    ap.add_argument("--target", action="store_true",
+                    help="貼らずに検出だけ試すための A4 ターゲットを出す")
     args = ap.parse_args()
 
+    if args.target:
+        out = args.out or "marker-target"
+        page = build_target(args.mm * 2)     # 机の上で試す前提なので大きめ
+        page.save(f"{out}.pdf", "PDF", resolution=DPI)
+        page.save(f"{out}.png", dpi=(DPI, DPI))
+        print(f"wrote {out}.pdf / {out}.png")
+        return
+
+    args.out = args.out or "marker-sheet"
     page, actual_mm = build(args.mm)
     # PDF は等倍印刷用、PNG はコンビニの写真/シール紙プリント用（縁なしで
     # 数%オーバースキャンされるが、quiet zone も一緒に拡大されるので検出には響かない）

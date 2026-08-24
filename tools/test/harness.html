@@ -99,6 +99,22 @@ function persistTest(w) {
   return { ok: bad.length === 0, bad: bad.join(' | ') };
 }
 
+/* The sheet's top row is ids 0-3 side by side, so an uncut sheet has to be
+   refused instead of producing a collapsed transform. */
+function quadGuardTest(w) {
+  const frame = 1920 * 1080;
+  const cases = [
+    [[[420,180],[1500,240],[1450,900],[380,840]], true,  'a real model'],
+    [[[200,500],[600,500],[1000,500],[1400,500]], false, 'uncut sheet, one row'],
+    [[[200,500],[600,505],[1000,500],[1400,495]], false, 'nearly collinear'],
+    [[[400,300],[420,300],[420,320],[400,320]],   false, 'far too small'],
+    [[[400,200],[1400,900],[1400,200],[400,900]], false, 'bowtie, stuck out of order'],
+  ];
+  const bad = cases.filter(([pts, want]) => w.quadUsable(pts, frame) !== want)
+                   .map(([, , why]) => why);
+  return { ok: bad.length === 0, bad: bad.join(' | ') };
+}
+
 /* Three markers must still produce a usable quad. */
 function completeQuadTest(w) {
   const byId = { 0: [0, 0], 1: [10, 0], 3: [0, 10] };
@@ -140,6 +156,7 @@ const loadApp = () => new Promise(res => {
   w = await loadApp();
 
   for (const [name, fn] of [['align:matrix', alignTest], ['align:persist', persistTest],
+                            ['align:quadGuard', quadGuardTest],
                             ['align:completeQuad', completeQuadTest]]) {
     try { results.push({ test: name, ...fn(w) }); }
     catch (e) { results.push({ test: name, ok: false, why: String(e && e.message || e) }); }
