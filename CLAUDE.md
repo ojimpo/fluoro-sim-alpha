@@ -52,6 +52,8 @@ Claude Code 向けのプロジェクト指示・引き継ぎメモ。
 - **表示モード**を `mono → inverted → color` で循環（`I` キー or Mono ボタン）。CSS `filter` で透視風（grayscale/contrast/brightness、反転で X 線風）
 - **保存**は Rec のセッション録画のみ。`navigator.share()`（写真 App 等へ）→ 非対応なら `<a download>` にフォールバック
 - **USB/BT フットスイッチのキー割り当て**。開始画面で登録し `localStorage` に永続化
+- **マーカーアライメント**（`marker-align` ブランチ、実機未確認）。模型の四隅に貼った ArUco マーカーを Align ボタンで1回だけ検出し、
+  画面中央に水平な矩形へ射影変換する。ArUco 検出器は依存ゼロの自前実装（`DICT_4X4_50`）
 
 ## 設計思想・ハマりどころ（iOS Safari 前提）
 
@@ -64,6 +66,13 @@ Claude Code 向けのプロジェクト指示・引き継ぎメモ。
 - **`MediaRecorder` は MIME タイプを指定しない**（`new MediaRecorder(stream)`）。Safari の MIME 処理に癖があり未指定が最も安定。保存拡張子は `blob.type` から判定
 - **PWA standalone だとカメラ許可が毎回プロンプトされる**（WebKit Bug #215884）。Safari で直接 URL を開けば回避できる（実用上は毎回1タップでも可）
 - **表示モードの CSS filter は録画に入らない**。`filter` は `#camera` / `#replay-video` の表示にかかるだけで、`MediaRecorder` は生の `stream` を録っている（`beginAcquire` とセッション録画の両方）。つまり **Rec で保存されるファイルは透視風ではなく生のカラー映像**で、画面と保存物が食い違う。見たままを録りたければ canvas 描画 + `canvas.captureStream()` へ移す必要がある
+- **マーカーの ID が模型の向きの契約**。`0`=左上 `1`=右上 `2`=右下 `3`=左下（時計回り）。模型を作る側と共有する唯一の取り決めなので、勝手に変えない
+- **検出は1回だけ、あとは CSS `transform: matrix3d`**。模型は箱の中で動かないので毎フレーム検出は不要。合成は GPU 側で終わるのでライブ経路のコストはゼロ、ペダルの応答も変わらない
+  - `localStorage`（`fluoro.align`）には行列ではなく**4点の動画ピクセル座標**を保存する。回転・リサイズのたびに行列を作り直せるため
+  - `matrix3d` は列優先。2D ホモグラフィ `[h0..h7]` は `matrix3d(h0,h3,0,h6, h1,h4,0,h7, 0,0,1,0, h2,h5,0,1)`。`transform-origin: 0 0` が前提
+  - `#camera` は `object-fit: contain` なので、動画ピクセル→要素 CSS ピクセルは一様スケール＋レターボックス補正だけ（`videoToElement`）
+- **`drawImage` は生フレームを取る**。透視風の見た目は CSS filter でピクセルに触らないので、表示モードが何であれ検出には影響しない
+- **リプレイワイプにはアライメントがかからない**（既知の制限）。ワイプは生の録画ストリームを再生しているため。揃えるには録画を canvas 経由にする必要があり、それは WebGPU 側の作業
 - **フルスクリーン/ミラーリング**は DP Alt Mode のスクリーンミラーで外部モニターにそのまま出る。縦向き時は回転を促すヒントを表示
 - **撮影クリップの保存機能は意図的に持たない**（2026-07 に実装済みだったものを削除）。実機の C-arm もワイプは一時的な参照表示で書き出し導線が無く、練習中に共有シートを開くと手技が止まる。映像を残す用途は Rec（セッション録画）が担う。もし run 単位の保存が要るとなったら、直近 N 本を自動保持して練習終わりにまとめて書き出す設計にする（ワイプのタップに保存を割り当てない）
 
@@ -72,6 +81,13 @@ Claude Code 向けのプロジェクト指示・引き継ぎメモ。
 - **ホスティング**: GitHub Pages（main / root）。サーバー不要の静的配信
 - ローカル確認はブラウザで `index.html` を開くだけ。実機確認は iPhone Safari で GitHub Pages の URL を開く
 - 変更は `index.html` を直接編集する（ビルドステップ無し）
+- **テスト**: `./tools/test/run.sh`。`index.html` そのものを headless Chrome の iframe に読ませて叩くので、テスト対象＝出荷物
+  - フィクスチャは `tools/test/make_fixtures.py` が生成（seed 固定、リポジトリには入れない）。要 `opencv-python`
+  - **`file://` ではなく `http://127.0.0.1` で配信する**。`file://` はオリジンが opaque で `localStorage` が使えず、アライメントの永続化を検証できない
+  - **落とし穴: アプリの `const`/`let` はスクリプトスコープなので `iframe.contentWindow` から見えない**。`window` に載るのは関数宣言だけ。
+    内部状態を差し込みたいときは `localStorage` に書いてから iframe をリロードする
+  - `--use-file-for-fake-video-capture` の偽カメラは **headless では `getUserMedia` が解決しなかった**ので、e2e は諦めている。
+    `getUserMedia` 経路の確認は実機（iPhone Safari）で行う
 
 ## 兄弟プロジェクト pulse-pump の運用に倣う
 
@@ -86,10 +102,9 @@ pulse-pump 側では機能ごとにコミットを分け、README/CLAUDE.md/DEVL
 - **WebGPU による映像処理**（DSA / ロードマップ / ウィンドウ調整・log 変換 / 量子ノイズ / 残像（リカーシブ時間フィルタ）/ 15p/s パルス化）。
   CSS filter では原理的に届かない領域。canvas に描く構成にすると `canvas.captureStream()` で「見たままを録る」も同時に解決する。
   要 iOS Safari 26+、`navigator.gpu` 無しの CSS filter フォールバックを残す。WGSL は文字列なので単一ファイル構成は維持できる
-- 表示のアライメント調整（広く撮って切り出し、模型を画面中央に水平配置）。模型の隅にマーカー（ArUco 等）を付ける案を亀井先生に提案済み・返事待ち。
-  **WebGPU 化すればホモグラフィはシェーダのテクスチャ座標変換として無料で入る**ので、単独で先行実装しない。
-  当面は手動キャリブレーション＋`localStorage` で足りるか実機で確認する。設計メモは Cosense
-  `透視シミュレーター 模型の自動アライメント（マーカー方式）`
+- マーカーアライメントの**実機確認**（`marker-align` ブランチ）。合成フレームでは通っているが、iPhone Safari では未検証。
+  見るべきは ①1080p の1フレーム検出にかかる時間 ②光沢シールの正反射で白飛びしないか ③4K を要求したときの発熱
+- マーカーアライメントの**手動微調整 UI**。検出後にドラッグでズレを詰められると実用度が上がる
 - 本番 `fluoro-sim` リポジトリへの移行
 
 ## 関連（Cosense: kouki プロジェクト）
